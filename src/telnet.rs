@@ -18,6 +18,8 @@ const WILL: u8 = 251;
 const SGA: u8 = 3;
 const TTYPE: u8 = 24;
 const NAWS: u8 = 31;
+const SB: u8 = 250; // 子协商开始
+const SE: u8 = 240; // 子协商结束
 
 // 处理Telnet客户端
 pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Result<()> {
@@ -117,31 +119,82 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     }
 }
 
-// 简单解析Telnet命令
+/// 解析Telnet客户端发送的协议命令
+/// 提取窗口大小信息并更新到width和height
+/// 成功获取窗口大小后返回true
 fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool {
     let mut i = 0;
-    while i < data.len() {
-        if data[i] == IAC && i + 2 < data.len() {
-            let cmd = data[i + 1];
-            let opt = data[i + 2];
+    let data_len = data.len();
 
-            // 处理窗口大小协商
-            if cmd == 250 && opt == TTYPE && i + 4 < data.len() && data[i + 3] == 0 {
-                // 终端类型响应，跳过
-                i += 4;
-            } else if cmd == 250 && opt == NAWS && i + 6 < data.len() {
-                // 窗口大小响应
-                *width = ((data[i + 3] as u16) << 8) | data[i + 4] as u16;
-                *height = ((data[i + 5] as u16) << 8) | data[i + 6] as u16;
-                i += 7;
-                return true; // 已获取窗口大小，准备发送动画
-            } else {
-                i += 3;
+    while i < data_len {
+        // 查找Telnet命令标记(IAC)
+        if data[i] == IAC && i + 1 < data_len {
+            match data[i + 1] {
+                // 处理子协商命令
+                SB => {
+                    // 确保有足够的字节进行解析
+                    if i + 2 >= data_len {
+                        break;
+                    }
+
+                    let option = data[i + 2];
+                    i += 3; // 跳过IAC, SB, option
+
+                    // 处理窗口大小子协商
+                    if option == NAWS {
+                        // NAWS需要4字节数据(宽度高8位、宽度低8位、高度高8位、高度低8位)
+                        if i + 4 <= data_len {
+                            *width = ((data[i] as u16) << 8) | data[i + 1] as u16;
+                            *height = ((data[i + 2] as u16) << 8) | data[i + 3] as u16;
+
+                            // 跳过数据并寻找子协商结束标记
+                            i += 4;
+                            while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
+                                i += 1;
+                            }
+
+                            // 跳过SE标记
+                            if i + 1 < data_len {
+                                i += 2;
+                            }
+
+                            return true; // 成功获取窗口大小
+                        }
+                    }
+                    // 处理终端类型子协商（仅跳过，不处理具体类型）
+                    else if option == TTYPE {
+                        // 跳过终端类型数据直到子协商结束
+                        while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
+                            i += 1;
+                        }
+                        // 跳过SE标记
+                        if i + 1 < data_len {
+                            i += 2;
+                        }
+                    }
+                    // 其他子协商类型：直接跳到结束
+                    else {
+                        while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
+                            i += 1;
+                        }
+                        if i + 1 < data_len {
+                            i += 2;
+                        }
+                    }
+                }
+
+                // 其他Telnet命令：跳过3字节(IAC + cmd + opt)
+                _ => {
+                    i += 3;
+                }
             }
-        } else {
+        }
+        // 非命令数据：向前移动1字节
+        else {
             i += 1;
         }
     }
+
     false
 }
 
