@@ -39,7 +39,7 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
 
     loop {
         match stream.read(&mut buf).await {
-            Ok(n) if n == 0 => break, // 连接关闭
+            Ok(0) => break, // 连接关闭
             Ok(n) => {
                 // 简单处理Telnet命令（实际需要更完整的解析）
                 if parse_telnet_commands(&buf[..n], &mut client_width, &mut client_height) {
@@ -146,8 +146,8 @@ fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool
 }
 
 // 运行Telnet服务器
-pub async fn run_telnet_server(port: u16, args: &Args) -> io::Result<()> {
-    let addr = format!("0.0.0.0:{}", port);
+pub async fn run_telnet_server(args: &Args) -> io::Result<()> {
+    let addr = format!("0.0.0.0:{}", args.port);
     let listener = TcpListener::bind(&addr).await?;
     println!("Telnet server running on {}", addr);
 

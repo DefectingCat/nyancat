@@ -19,12 +19,19 @@ use crate::{
 
 mod animation;
 mod cli;
+mod standalone;
 mod telnet;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    run_standalone(&args).await?;
+
+    if args.telnet {
+        telnet::run_telnet_server(&args).await?;
+    } else {
+        run_standalone(&args).await?;
+    }
+
     Ok(())
 }
 
