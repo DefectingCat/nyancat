@@ -1,7 +1,3 @@
-use std::io::{self, Write};
-
-use crossterm::{cursor, execute};
-
 const FRAME0: &[&str] = &[
     ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,,,,,,,,,,,,,,,,,,,,,,,,,",
     ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,.,,,,,,,,,,,,,,,,,,,,,,,,",
@@ -813,56 +809,3 @@ pub const FRAMES: &[&[&str]] = &[
 
 pub const FRAME_WIDTH: usize = 64;
 pub const FRAME_HEIGHT: usize = 64;
-
-/// 渲染帧到终端
-pub fn render_frame(frame: &[&str], terminal_width: u16, terminal_height: u16) -> io::Result<()> {
-    let mut stdout = io::stdout();
-
-    execute!(stdout, cursor::MoveTo(0, 0))?;
-
-    // 计算裁剪范围
-    let term_half_width = (terminal_width / 2) as usize;
-    let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
-    let max_col = min_col + term_half_width;
-    let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
-    // 减去终端高度减去1，因为终端坐标系从 0 开始
-    let max_row = min_row + (terminal_height - 1) as usize;
-
-    // 渲染帧内容
-    for (y, row) in frame.iter().enumerate() {
-        if y < min_row || y >= max_row {
-            continue;
-        }
-
-        let mut line = String::new();
-        for (x, c) in row.chars().enumerate() {
-            if x < min_col || x >= max_col {
-                continue;
-            }
-
-            match c {
-                ',' => line.push_str("\x1B[48;5;17m  \x1B[0m"),
-                '.' => line.push_str("\x1B[48;5;231m  \x1B[0m"),
-                '\'' => line.push_str("\x1B[48;5;16m  \x1B[0m"),
-                '@' => line.push_str("\x1B[48;5;230m  \x1B[0m"),
-                '$' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
-                '-' => line.push_str("\x1B[48;5;162m  \x1B[0m"),
-                '>' => line.push_str("\x1B[48;5;196m  \x1B[0m"),
-                '&' => line.push_str("\x1B[48;5;214m  \x1B[0m"),
-                '+' => line.push_str("\x1B[48;5;226m  \x1B[0m"),
-                '#' => line.push_str("\x1B[48;5;118m  \x1B[0m"),
-                '=' => line.push_str("\x1B[48;5;33m  \x1B[0m"),
-                ';' => line.push_str("\x1B[48;5;19m  \x1B[0m"),
-                '*' => line.push_str("\x1B[48;5;240m  \x1B[0m"),
-                '%' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
-                _ => todo!(),
-            };
-        }
-        // 渲染的行数减去最小行数，就是跳过的行
-        execute!(stdout, cursor::MoveTo(0, (y - min_row) as u16))?;
-        println!("{}", line);
-    }
-
-    stdout.flush()?;
-    Ok(())
-}
