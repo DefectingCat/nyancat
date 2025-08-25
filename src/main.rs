@@ -8,24 +8,27 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use tokio::time::sleep;
 
 use crate::{
     animation::{FRAMES, render_frame},
     cli::Args,
+    terminal::terminal_colors,
 };
 
 mod animation;
 mod cli;
 mod telnet;
+mod terminal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    run_standalone(&args).await?;
-    // println!("{:?}", FRAMES);
+    // run_standalone(&args).await?;
+    let colors = terminal_colors()?;
+    println!("{:?}", colors);
     Ok(())
 }
 
