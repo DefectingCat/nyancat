@@ -12,7 +12,7 @@ use crossterm::{
 use tokio::time::{Instant, sleep};
 
 use crate::{
-    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES},
+    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES, render_color},
     cli::Args,
 };
 
@@ -118,23 +118,7 @@ pub fn render_frame(frame: &[&str], terminal_width: u16, terminal_height: u16) -
                 continue;
             }
 
-            match c {
-                ',' => line.push_str("\x1B[48;5;17m  \x1B[0m"),
-                '.' => line.push_str("\x1B[48;5;231m  \x1B[0m"),
-                '\'' => line.push_str("\x1B[48;5;16m  \x1B[0m"),
-                '@' => line.push_str("\x1B[48;5;230m  \x1B[0m"),
-                '$' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
-                '-' => line.push_str("\x1B[48;5;162m  \x1B[0m"),
-                '>' => line.push_str("\x1B[48;5;196m  \x1B[0m"),
-                '&' => line.push_str("\x1B[48;5;214m  \x1B[0m"),
-                '+' => line.push_str("\x1B[48;5;226m  \x1B[0m"),
-                '#' => line.push_str("\x1B[48;5;118m  \x1B[0m"),
-                '=' => line.push_str("\x1B[48;5;33m  \x1B[0m"),
-                ';' => line.push_str("\x1B[48;5;19m  \x1B[0m"),
-                '*' => line.push_str("\x1B[48;5;240m  \x1B[0m"),
-                '%' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
-                _ => todo!(),
-            };
+            line.push_str(render_color(c));
         }
         // 渲染的行数减去最小行数，就是跳过的行
         execute!(stdout, cursor::MoveTo(0, (y - min_row) as u16))?;

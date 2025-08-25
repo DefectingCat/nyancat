@@ -809,3 +809,24 @@ pub const FRAMES: &[&[&str]] = &[
 
 pub const FRAME_WIDTH: usize = 64;
 pub const FRAME_HEIGHT: usize = 64;
+
+/// 渲染字符为对应的颜色代码
+pub fn render_color(character: char) -> &'static str {
+    match character {
+        ',' => "\x1B[48;5;17m  \x1B[0m",
+        '.' => "\x1B[48;5;231m  \x1B[0m",
+        '\'' => "\x1B[48;5;16m  \x1B[0m",
+        '@' => "\x1B[48;5;230m  \x1B[0m",
+        '$' => "\x1B[48;5;175m  \x1B[0m",
+        '-' => "\x1B[48;5;162m  \x1B[0m",
+        '>' => "\x1B[48;5;196m  \x1B[0m",
+        '&' => "\x1B[48;5;214m  \x1B[0m",
+        '+' => "\x1B[48;5;226m  \x1B[0m",
+        '#' => "\x1B[48;5;118m  \x1B[0m",
+        '=' => "\x1B[48;5;33m  \x1B[0m",
+        ';' => "\x1B[48;5;19m  \x1B[0m",
+        '*' => "\x1B[48;5;240m  \x1B[0m",
+        '%' => "\x1B[48;5;175m  \x1B[0m",
+        _ => todo!(),
+    }
+}

@@ -7,7 +7,7 @@ use tokio::{
 };
 
 use crate::{
-    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES},
+    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES, render_color},
     cli::Args,
 };
 
@@ -84,25 +84,7 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
                     continue;
                 }
 
-                // let color = get_color_code(c);
-                // frame_data.push_str(&format!("\x1B[3{}m  \x1B[0m", color));
-                match c {
-                    ',' => frame_data.push_str("\x1B[48;5;17m  \x1B[0m"),
-                    '.' => frame_data.push_str("\x1B[48;5;231m  \x1B[0m"),
-                    '\'' => frame_data.push_str("\x1B[48;5;16m  \x1B[0m"),
-                    '@' => frame_data.push_str("\x1B[48;5;230m  \x1B[0m"),
-                    '$' => frame_data.push_str("\x1B[48;5;175m  \x1B[0m"),
-                    '-' => frame_data.push_str("\x1B[48;5;162m  \x1B[0m"),
-                    '>' => frame_data.push_str("\x1B[48;5;196m  \x1B[0m"),
-                    '&' => frame_data.push_str("\x1B[48;5;214m  \x1B[0m"),
-                    '+' => frame_data.push_str("\x1B[48;5;226m  \x1B[0m"),
-                    '#' => frame_data.push_str("\x1B[48;5;118m  \x1B[0m"),
-                    '=' => frame_data.push_str("\x1B[48;5;33m  \x1B[0m"),
-                    ';' => frame_data.push_str("\x1B[48;5;19m  \x1B[0m"),
-                    '*' => frame_data.push_str("\x1B[48;5;240m  \x1B[0m"),
-                    '%' => frame_data.push_str("\x1B[48;5;175m  \x1B[0m"),
-                    _ => todo!(),
-                };
+                frame_data.push_str(render_color(c));
             }
             frame_data.push('\n');
         }
