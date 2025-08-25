@@ -1,8 +1,4 @@
-use std::{
-    io::{self, Write},
-    thread::sleep,
-    time::Duration,
-};
+use std::io::{self, Write};
 
 use crossterm::{cursor, execute};
 
