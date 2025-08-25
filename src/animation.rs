@@ -1,4 +1,8 @@
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    thread::sleep,
+    time::Duration,
+};
 
 use crossterm::{cursor, execute};
 
@@ -814,21 +818,10 @@ pub const FRAMES: &[&[&str]] = &[
 pub const FRAME_WIDTH: usize = 64;
 pub const FRAME_HEIGHT: usize = 64;
 
-// 渲染帧到终端
-pub fn render_frame(
-    frame: &[&str],
-    terminal_width: u16,
-    terminal_height: u16,
-    no_clear: bool,
-) -> io::Result<()> {
+/// 渲染帧到终端
+pub fn render_frame(frame: &[&str], terminal_width: u16, terminal_height: u16) -> io::Result<()> {
     let mut stdout = io::stdout();
 
-    if !no_clear {
-        execute!(
-            stdout,
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-        )?;
-    }
     execute!(stdout, cursor::MoveTo(0, 0))?;
 
     // 计算裁剪范围
@@ -836,7 +829,8 @@ pub fn render_frame(
     let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
     let max_col = min_col + term_half_width;
     let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
-    let max_row = min_row + terminal_height as usize;
+    // 减去终端高度减去1，因为终端坐标系从 0 开始
+    let max_row = min_row + (terminal_height - 1) as usize;
 
     // 渲染帧内容
     for (y, row) in frame.iter().enumerate() {
@@ -869,7 +863,8 @@ pub fn render_frame(
                 _ => todo!(),
             };
         }
-        execute!(stdout, cursor::MoveTo(0, y as u16))?;
+        // 渲染的行数减去最小行数，就是跳过的行
+        execute!(stdout, cursor::MoveTo(0, (y - min_row) as u16))?;
         println!("{}", line);
     }
 

@@ -53,6 +53,13 @@ async fn run_standalone(args: &Args) -> anyhow::Result<()> {
     let mut frame_idx = 0;
     let start_time = Instant::now();
 
+    if !args.no_clear {
+        execute!(
+            stdout,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        )?;
+    }
+
     loop {
         // 检查是否退出
         if event_loop.is_finished() {
@@ -63,13 +70,16 @@ async fn run_standalone(args: &Args) -> anyhow::Result<()> {
         let size = crossterm::terminal::size()?;
 
         // 渲染当前帧
-        render_frame(FRAMES[frame_idx], size.0, size.1, args.no_clear)?;
+        render_frame(FRAMES[frame_idx], size.0, size.1)?;
 
         // 显示计数器
         if !args.no_counter {
             let elapsed = start_time.elapsed().as_secs();
+            // 清空上一个计数器
             execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            print!("Frame: {}, Time: {}s", frame_idx, elapsed);
+            print!("                         ");
+            execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
+            print!("Frame: {}, Time: {:.1}s", frame_idx, elapsed);
             stdout.flush()?;
         }
 
