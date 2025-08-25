@@ -15,25 +15,21 @@ use tokio::time::sleep;
 use crate::{
     animation::{FRAMES, render_frame},
     cli::Args,
-    terminal::terminal_colors,
 };
 
 mod animation;
 mod cli;
 mod telnet;
-mod terminal;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    // run_standalone(&args).await?;
-    let colors = terminal_colors()?;
-    println!("{:?}", colors);
+    run_standalone(&args).await?;
     Ok(())
 }
 
 // 独立模式运行
-async fn run_standalone(args: &Args) -> io::Result<()> {
+async fn run_standalone(args: &Args) -> anyhow::Result<()> {
     let mut stdout = io::stdout();
 
     // 终端初始化

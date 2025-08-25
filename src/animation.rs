@@ -814,19 +814,6 @@ pub const FRAMES: &[&[&str]] = &[
 pub const FRAME_WIDTH: usize = 64;
 pub const FRAME_HEIGHT: usize = 64;
 
-// 颜色映射
-pub fn get_color_code(c: char) -> u8 {
-    match c {
-        '@' => 1, // 红色
-        '$' => 3, // 黄色
-        '&' => 2, // 绿色
-        '+' => 6, // 青色
-        '#' => 4, // 蓝色
-        '*' => 5, // 紫色
-        _ => 0,   // 黑色
-    }
-}
-
 // 渲染帧到终端
 pub fn render_frame(
     frame: &[&str],
@@ -863,13 +850,26 @@ pub fn render_frame(
                 continue;
             }
 
-            let color = get_color_code(c);
-            println!("color: {}", color);
-            line.push_str(&format!(
-                "\x1B[3{}m  \x1B[0m", // 双宽字符显示
-                color
-            ));
+            let c = c.to_string();
+            match c.as_str() {
+                "," => line.push_str("\x1B[48;5;17m  \x1B[0m"),
+                "." => line.push_str("\x1B[48;5;231m  \x1B[0m"),
+                "'" => line.push_str("\x1B[48;5;16m  \x1B[0m"),
+                "@" => line.push_str("\x1B[48;5;230m  \x1B[0m"),
+                "$" => line.push_str("\x1B[48;5;175m  \x1B[0m"),
+                "-" => line.push_str("\x1B[48;5;162m  \x1B[0m"),
+                ">" => line.push_str("\x1B[48;5;196m  \x1B[0m"),
+                "&" => line.push_str("\x1B[48;5;214m  \x1B[0m"),
+                "+" => line.push_str("\x1B[48;5;226m  \x1B[0m"),
+                "#" => line.push_str("\x1B[48;5;118m  \x1B[0m"),
+                "=" => line.push_str("\x1B[48;5;33m  \x1B[0m"),
+                ";" => line.push_str("\x1B[48;5;19m  \x1B[0m"),
+                "*" => line.push_str("\x1B[48;5;240m  \x1B[0m"),
+                "%" => line.push_str("\x1B[48;5;175m  \x1B[0m"),
+                _ => todo!(),
+            };
         }
+        execute!(stdout, cursor::MoveTo(0, y as u16))?;
         println!("{}", line);
     }
 
