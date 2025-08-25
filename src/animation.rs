@@ -840,22 +840,21 @@ pub fn render_frame(frame: &[&str], terminal_width: u16, terminal_height: u16) -
                 continue;
             }
 
-            let c = c.to_string();
-            match c.as_str() {
-                "," => line.push_str("\x1B[48;5;17m  \x1B[0m"),
-                "." => line.push_str("\x1B[48;5;231m  \x1B[0m"),
-                "'" => line.push_str("\x1B[48;5;16m  \x1B[0m"),
-                "@" => line.push_str("\x1B[48;5;230m  \x1B[0m"),
-                "$" => line.push_str("\x1B[48;5;175m  \x1B[0m"),
-                "-" => line.push_str("\x1B[48;5;162m  \x1B[0m"),
-                ">" => line.push_str("\x1B[48;5;196m  \x1B[0m"),
-                "&" => line.push_str("\x1B[48;5;214m  \x1B[0m"),
-                "+" => line.push_str("\x1B[48;5;226m  \x1B[0m"),
-                "#" => line.push_str("\x1B[48;5;118m  \x1B[0m"),
-                "=" => line.push_str("\x1B[48;5;33m  \x1B[0m"),
-                ";" => line.push_str("\x1B[48;5;19m  \x1B[0m"),
-                "*" => line.push_str("\x1B[48;5;240m  \x1B[0m"),
-                "%" => line.push_str("\x1B[48;5;175m  \x1B[0m"),
+            match c {
+                ',' => line.push_str("\x1B[48;5;17m  \x1B[0m"),
+                '.' => line.push_str("\x1B[48;5;231m  \x1B[0m"),
+                '\'' => line.push_str("\x1B[48;5;16m  \x1B[0m"),
+                '@' => line.push_str("\x1B[48;5;230m  \x1B[0m"),
+                '$' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
+                '-' => line.push_str("\x1B[48;5;162m  \x1B[0m"),
+                '>' => line.push_str("\x1B[48;5;196m  \x1B[0m"),
+                '&' => line.push_str("\x1B[48;5;214m  \x1B[0m"),
+                '+' => line.push_str("\x1B[48;5;226m  \x1B[0m"),
+                '#' => line.push_str("\x1B[48;5;118m  \x1B[0m"),
+                '=' => line.push_str("\x1B[48;5;33m  \x1B[0m"),
+                ';' => line.push_str("\x1B[48;5;19m  \x1B[0m"),
+                '*' => line.push_str("\x1B[48;5;240m  \x1B[0m"),
+                '%' => line.push_str("\x1B[48;5;175m  \x1B[0m"),
                 _ => todo!(),
             };
         }

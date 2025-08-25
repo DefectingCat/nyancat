@@ -1,6 +1,6 @@
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(author, version, about = "Nyancat !!!", long_about = None)]
 pub struct Args {
     /// telnet 模式
