@@ -2,6 +2,10 @@
 
 Nyancat is a simple ASCII animation.
 
+![screenshot](./screenshots/screenshot1.png)
+
+![screenshot](./screenshots/screenshot2.png)
+
 ## Usage
 
 ```bash
