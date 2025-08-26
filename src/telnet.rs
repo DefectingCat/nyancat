@@ -135,9 +135,9 @@ fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool
                             }
 
                             // 跳过SE标记
-                            if i + 1 < data_len {
-                                i += 2;
-                            }
+                            // if i + 1 < data_len {
+                            //     i += 2;
+                            // }
 
                             return true; // 成功获取窗口大小
                         }
