@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use colored::{Color, Colorize};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
@@ -56,18 +57,29 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
 
         // 获取终端大小
         let size = crossterm::terminal::size()?;
+        let (terminal_width, terminal_height) = size;
+
+        // 计算裁剪范围
+        let term_half_width = (terminal_width / 2) as usize;
+        let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
+        let max_col = min_col + term_half_width;
+        let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
+        // 减去终端高度减去1，因为终端坐标系从 0 开始
+        let max_row = min_row + (terminal_height - 1) as usize;
 
         // 渲染当前帧
-        render_frame(FRAMES[frame_idx], size.0, size.1)?;
+        render_frame(FRAMES[frame_idx], min_row, max_row, min_col, max_col)?;
 
         // 显示计数器
         if !args.no_counter {
             let elapsed = start_time.elapsed().as_secs();
             // 清空上一个计数器
             execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            print!("                         ");
+            print!("                           ");
             execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            print!("Frame: {}, Time: {:.1}s", frame_idx, elapsed);
+            let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
+            let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
+            print!("{}", nyaned.on_color(bg));
             stdout.flush()?;
         }
 
@@ -93,26 +105,34 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
 }
 
 /// 渲染帧到终端
-pub fn render_frame(frame: &[&str], terminal_width: u16, terminal_height: u16) -> io::Result<()> {
+pub fn render_frame(
+    frame: &[&str],
+    min_row: usize,
+    max_row: usize,
+    min_col: usize,
+    max_col: usize,
+) -> io::Result<()> {
     let mut stdout = io::stdout();
 
     execute!(stdout, cursor::MoveTo(0, 0))?;
 
-    // 计算裁剪范围
-    let term_half_width = (terminal_width / 2) as usize;
-    let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
-    let max_col = min_col + term_half_width;
-    let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
-    // 减去终端高度减去1，因为终端坐标系从 0 开始
-    let max_row = min_row + (terminal_height - 1) as usize;
+    // // 计算裁剪范围
+    // let term_half_width = (terminal_width / 2) as usize;
+    // let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
+    // let max_col = min_col + term_half_width;
+    // let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
+    // // 减去终端高度减去1，因为终端坐标系从 0 开始
+    // let max_row = min_row + (terminal_height - 1) as usize;
 
     // 渲染帧内容
+    // 行
     for (y, row) in frame.iter().enumerate() {
         if y < min_row || y >= max_row {
             continue;
         }
 
         let mut line = String::new();
+        // 列
         for (x, c) in row.chars().enumerate() {
             if x < min_col || x >= max_col {
                 continue;
