@@ -72,14 +72,34 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
 
         // 显示计数器
         if !args.no_counter {
+            // 计数器显式长度，终端与单个帧的长度
+            let counter_width = if usize::from(terminal_width) < FRAME_WIDTH {
+                terminal_width as usize
+            } else {
+                FRAME_WIDTH
+            };
+            // 居中显式文字
             let elapsed = start_time.elapsed().as_secs();
-            // 清空上一个计数器
-            execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            print!("                           ");
-            execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
             let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
-            print!("{}", nyaned.on_color(bg));
+            let text_len = nyaned.len();
+            let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
+            if text_len >= counter_width {
+                execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
+                print!("{}", nyaned.on_color(bg));
+            }
+            let padding = (counter_width - text_len) / 2 + 7;
+            // dbg!(counter_width, text_len, padding);
+            execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
+            print!(
+                "{}{}{}",
+                "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
+                nyaned.on_color(bg),
+                "\x1B[48;5;17m  \x1B[0m".repeat(padding),
+            );
+
+            // 清空上一个计数器
+            // execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
+            // print!("                           ");
             stdout.flush()?;
         }
 
