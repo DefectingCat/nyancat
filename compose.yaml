@@ -1,0 +1,7 @@
+services:
+  server:
+    build:
+      context: .
+      target: final
+    ports:
+      - 23:23
