@@ -1,13 +1,14 @@
 use std::time::Duration;
 
+use colored::{Color, Colorize};
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    time::sleep,
+    time::{Instant, sleep},
 };
 
 use crate::{
-    animation::{FRAMES, RenderSize, render_color},
+    animation::{FRAME_WIDTH, FRAMES, RenderSize, render_color},
     cli::Args,
 };
 
@@ -58,6 +59,8 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
 
     // 发送动画帧
     let mut frame_idx = 0;
+    let start_time = Instant::now();
+
     loop {
         // 渲染帧到缓冲区
         let mut frame_data = String::new();
@@ -86,6 +89,29 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
                 frame_data.push_str(render_color(c));
             }
             frame_data.push('\n');
+        }
+
+        // 显示计数器
+        if !args.no_counter {
+            // 计数器显式长度，终端与单个帧的长度
+            let counter_width = if usize::from(client_width) < FRAME_WIDTH {
+                client_width as usize
+            } else {
+                FRAME_WIDTH
+            };
+
+            // 居中显式文字
+            let elapsed = start_time.elapsed().as_secs();
+            let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
+            let text_len = nyaned.len();
+            let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
+            let padding = (counter_width - text_len) / 2 + 7;
+            frame_data.push_str(&format!(
+                "{}{}{}",
+                "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
+                nyaned.on_color(bg),
+                "\x1B[48;5;17m  \x1B[0m".repeat(padding),
+            ));
         }
 
         // 发送帧数据
