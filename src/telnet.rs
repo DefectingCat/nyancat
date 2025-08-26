@@ -7,7 +7,7 @@ use tokio::{
 };
 
 use crate::{
-    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES, render_color},
+    animation::{FRAMES, RenderSize, render_color},
     cli::Args,
 };
 
@@ -65,13 +65,12 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
             frame_data.push_str("\x1B[2J\x1B[1;1H"); // 清屏
         }
 
-        // 计算裁剪范围
-        let term_half_width = (client_width / 2) as usize;
-        let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
-        let max_col = min_col + term_half_width;
-        let min_row = (FRAME_HEIGHT.saturating_sub(client_height as usize)).saturating_div(2);
-        // 减去终端高度减去1，因为终端坐标系从 0 开始
-        let max_row = min_row + (client_height - 1) as usize;
+        let RenderSize {
+            min_col,
+            max_col,
+            min_row,
+            max_row,
+        } = RenderSize::new(client_width, client_height);
 
         // 构建帧内容
         for (y, row) in FRAMES[frame_idx].iter().enumerate() {

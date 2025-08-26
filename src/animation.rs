@@ -830,3 +830,29 @@ pub fn render_color(character: char) -> &'static str {
         _ => todo!(),
     }
 }
+
+/// 渲染大小
+pub struct RenderSize {
+    pub min_col: usize,
+    pub max_col: usize,
+    pub min_row: usize,
+    pub max_row: usize,
+}
+
+impl RenderSize {
+    pub fn new(terminal_width: u16, terminal_height: u16) -> Self {
+        let term_half_width = (terminal_width / 2) as usize;
+        let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
+        let max_col = min_col + term_half_width;
+        let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
+        // 减去终端高度减去1，因为终端坐标系从 0 开始
+        let max_row = min_row + (terminal_height - 1) as usize;
+
+        Self {
+            min_col,
+            max_col,
+            min_row,
+            max_row,
+        }
+    }
+}

@@ -13,7 +13,7 @@ use crossterm::{
 use tokio::time::{Instant, sleep};
 
 use crate::{
-    animation::{FRAME_HEIGHT, FRAME_WIDTH, FRAMES, render_color},
+    animation::{FRAME_WIDTH, FRAMES, RenderSize, render_color},
     cli::Args,
 };
 
@@ -59,13 +59,12 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
         let size = crossterm::terminal::size()?;
         let (terminal_width, terminal_height) = size;
 
-        // 计算裁剪范围
-        let term_half_width = (terminal_width / 2) as usize;
-        let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
-        let max_col = min_col + term_half_width;
-        let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
-        // 减去终端高度减去1，因为终端坐标系从 0 开始
-        let max_row = min_row + (terminal_height - 1) as usize;
+        let RenderSize {
+            min_col,
+            max_col,
+            min_row,
+            max_row,
+        } = RenderSize::new(terminal_width, terminal_height);
 
         // 渲染当前帧
         render_frame(FRAMES[frame_idx], min_row, max_row, min_col, max_col)?;
@@ -88,7 +87,6 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
                 print!("{}", nyaned.on_color(bg));
             }
             let padding = (counter_width - text_len) / 2 + 7;
-            // dbg!(counter_width, text_len, padding);
             execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
             print!(
                 "{}{}{}",
@@ -96,10 +94,6 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
                 nyaned.on_color(bg),
                 "\x1B[48;5;17m  \x1B[0m".repeat(padding),
             );
-
-            // 清空上一个计数器
-            // execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-            // print!("                           ");
             stdout.flush()?;
         }
 
