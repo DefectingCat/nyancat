@@ -1,3 +1,6 @@
+use colored::{Color, Colorize};
+use tokio::time::Instant;
+
 const FRAME0: &[&str] = &[
     ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,,,,,,,,,,,,,,,,,,,,,,,,,",
     ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,.,.,,,,,,,,,,,,,,,,,,,,,,,,",
@@ -853,6 +856,68 @@ impl RenderSize {
             max_col,
             min_row,
             max_row,
+        }
+    }
+}
+
+pub struct NyanedTime {
+    // 计数器宽度
+    // pub width: usize,
+    // 终端宽度
+    // pub terminal_width: usize,
+    // 计时
+    // pub elapsed: u64,
+    /// 计数器文本长度
+    pub text_len: usize,
+    /// 计数器背景颜色
+    // pub bg: Color,
+    // 计数器填充字符串的长度
+    // pub padding: usize,
+    /// 未添加背景的计数文本
+    pub nyaned: String,
+    /// 添加背景的计数文本
+    pub counter_text: String,
+}
+
+impl NyanedTime {
+    /// 显示计数器
+    ///
+    /// ## Arguments
+    ///
+    /// * `start_time`: 开始时间
+    /// * `terminal_width`: 终端宽度
+    ///
+    /// ## Returns
+    ///
+    /// * `(counter_text, counter_width)`: 计数器文本和计数器宽度
+    pub fn new(start_time: Instant, terminal_width: u16) -> Self {
+        // 计数器显式长度，终端与单个帧的长度
+        let counter_width = if usize::from(terminal_width) < FRAME_WIDTH {
+            terminal_width as usize
+        } else {
+            FRAME_WIDTH
+        };
+
+        let elapsed = start_time.elapsed().as_secs();
+        let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
+        let text_len = nyaned.len();
+        let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
+        let padding = (counter_width - text_len) / 2 + 7;
+        let counter_text = format!(
+            "{}{}{}",
+            "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
+            nyaned.on_color(bg),
+            "\x1B[48;5;17m  \x1B[0m".repeat(padding),
+        );
+        Self {
+            // width: text_len,
+            // terminal_width: terminal_width as usize,
+            // elapsed,
+            text_len,
+            // bg,
+            // padding,
+            nyaned,
+            counter_text,
         }
     }
 }
