@@ -130,14 +130,6 @@ pub fn render_frame(
 
     execute!(stdout, cursor::MoveTo(0, 0))?;
 
-    // // 计算裁剪范围
-    // let term_half_width = (terminal_width / 2) as usize;
-    // let min_col = (FRAME_WIDTH.saturating_sub(term_half_width)).saturating_div(2);
-    // let max_col = min_col + term_half_width;
-    // let min_row = (FRAME_HEIGHT.saturating_sub(terminal_height as usize)).saturating_div(2);
-    // // 减去终端高度减去1，因为终端坐标系从 0 开始
-    // let max_row = min_row + (terminal_height - 1) as usize;
-
     // 渲染帧内容
     // 行
     for (y, row) in frame.iter().enumerate() {
