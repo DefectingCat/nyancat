@@ -18,10 +18,12 @@ async fn main() -> anyhow::Result<()> {
 
     if args.telnet {
         telnet::run_telnet_server(&args).await?;
+        return Ok(());
     }
 
     if args.http {
         http::run_http().await?;
+        return Ok(());
     }
 
     standalone::run_standalone(&args).await?;
