@@ -7,6 +7,10 @@ pub struct Args {
     #[arg(short, long)]
     pub telnet: bool,
 
+    /// http 模式
+    #[arg(short = 'H', long)]
+    pub http: bool,
+
     /// 不显示计数器
     #[arg(short = 'n', long = "no-counter")]
     pub no_counter: bool,
