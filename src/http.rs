@@ -1,12 +1,15 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{fmt::Display, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, bail};
 use axum::{
     Router,
+    body::Bytes,
     extract::{
         ConnectInfo, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
+    http::{HeaderMap, HeaderValue, Request},
+    response::Response,
     routing::{any, get},
 };
 use axum_extra::{TypedHeader, headers};
@@ -16,9 +19,57 @@ use tokio::{
     sync::mpsc::{self, Sender},
     time::{Instant, sleep},
 };
-use tracing::info;
+use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
+use tracing::{Span, error, info, info_span};
 
 use crate::{animation::FRAMES, cli::Args, telnet::build_frame};
+
+/// Format request latency and status message
+/// return a string
+fn format_latency(latency: Duration, status: impl Display) -> String {
+    let micros = latency.as_micros();
+    let millis = latency.as_millis();
+    if micros >= 1000 {
+        format!("{status} {millis}ms")
+    } else {
+        format!("{status} {micros}μs")
+    }
+}
+
+/// Middleware for logging each request.
+///
+/// This middleware will calculate each request latency
+/// and add request's information to each info_span.
+pub fn logging_route(router: Router) -> Router {
+    let make_span = |req: &Request<_>| {
+        let unknown = &HeaderValue::from_static("Unknown");
+        let empty = &HeaderValue::from_static("");
+        let headers = req.headers();
+        let ua = headers
+            .get("User-Agent")
+            .unwrap_or(unknown)
+            .to_str()
+            .unwrap_or("Unknown");
+        let host = headers.get("Host").unwrap_or(empty).to_str().unwrap_or("");
+        info_span!("HTTP", method = ?req.method(), host, uri = ?req.uri(), ua)
+    };
+
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(make_span)
+        .on_request(|_req: &Request<_>, _span: &Span| {})
+        .on_response(|res: &Response, latency: Duration, _span: &Span| {
+            info!("{}", format_latency(latency, res.status()));
+        })
+        .on_body_chunk(|_chunk: &Bytes, _latency: Duration, _span: &Span| {})
+        .on_eos(|_trailers: Option<&HeaderMap>, _stream_duration: Duration, _span: &Span| {})
+        .on_failure(
+            |error: ServerErrorsFailureClass, latency: Duration, _span: &Span| {
+                error!("{}", format_latency(latency, error));
+            },
+        );
+
+    router.layer(trace_layer)
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -33,9 +84,15 @@ pub async fn run_http(args: Args) -> anyhow::Result<()> {
         .route("/ws", any(ws))
         .with_state(state);
 
+    let app = logging_route(app);
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
     info!("listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -49,6 +106,7 @@ async fn ws(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     state: State<AppState>,
 ) -> axum::response::Response {
+    info!("`{user_agent:?}` at {addr:?} connected.");
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
     } else {
@@ -81,9 +139,6 @@ pub struct MessageFrame {
 async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
     let (mut sender, mut receiver) = socket.split();
 
-    // 创建两个 channel，用于在应用程序和 WebSocket 之间传递消息
-    // 从应用程序接收消息并发送到 WebSocket
-    // let (tx_to_ws, rx_to_ws) = mpsc::channel::<MessageFrame>(128); // 应用程序 → WebSocket
     // 从 WebSocket 接收消息并发送到应用程序
     let (tx_from_ws, mut rx_from_ws) = mpsc::channel::<MessageFrame>(128); // WebSocket → 应用程序
 
@@ -173,10 +228,10 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                 Ok(a) => {
                     match a {
                         Ok(_) => info!("messages sent to {who}"),
-                        Err(a) => info!("Error sending messages {a:?}")
+                        Err(a) => error!("Error sending messages {a:?}")
                     }
                 },
-                Err(a) => info!("Error sending messages {a:?}")
+                Err(a) => error!("Error sending messages {a:?}")
             }
             recv_task.abort();
         },
@@ -185,10 +240,10 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                 Ok(b) => {
                     match b {
                         Ok(_) => info!("Received messages"),
-                        Err(b) => info!("Error receiving messages {b:?}")
+                        Err(b) => error!("Error receiving messages {b:?}")
                     }
                 },
-                Err(b) => info!("Error receiving messages {b:?}")
+                Err(b) => error!("Error receiving messages {b:?}")
             }
             send_task.abort();
         }
