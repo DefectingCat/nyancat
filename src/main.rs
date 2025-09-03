@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if args.http {
-        http::run_http().await?;
+        http::run_http(args).await?;
         return Ok(());
     }
 

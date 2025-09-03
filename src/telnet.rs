@@ -21,6 +21,55 @@ const NAWS: u8 = 31;
 const SB: u8 = 250; // 子协商开始
 const SE: u8 = 240; // 子协商结束
 
+pub fn build_frame(
+    width: u16,
+    height: u16,
+    args: &Args,
+    frame_idx: usize,
+    start_time: Instant,
+) -> String {
+    // 渲染帧到缓冲区
+    let mut frame_data = String::new();
+    if !args.no_clear {
+        frame_data.push_str("\x1B[2J\x1B[1;1H"); // 清屏
+    }
+
+    let RenderSize {
+        min_col,
+        max_col,
+        min_row,
+        max_row,
+    } = RenderSize::new(width, height);
+
+    // 构建帧内容
+    for (y, row) in FRAMES[frame_idx].iter().enumerate() {
+        if y < min_row || y >= max_row {
+            continue;
+        }
+
+        for (x, c) in row.chars().enumerate() {
+            if x < min_col || x >= max_col {
+                continue;
+            }
+
+            frame_data.push_str(render_color(c));
+        }
+        frame_data.push('\n');
+    }
+
+    // 显示计数器
+    if !args.no_counter {
+        let nyaned_time = NyanedTime::new(start_time, width);
+        if nyaned_time.text_len >= width.into() {
+            frame_data.push_str(&nyaned_time.nyaned);
+        } else {
+            frame_data.push_str(&nyaned_time.counter_text);
+        }
+    }
+
+    frame_data
+}
+
 // 处理Telnet客户端
 pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Result<()> {
     let addr = stream.peer_addr()?;
@@ -61,44 +110,7 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     let start_time = Instant::now();
 
     loop {
-        // 渲染帧到缓冲区
-        let mut frame_data = String::new();
-        if !args.no_clear {
-            frame_data.push_str("\x1B[2J\x1B[1;1H"); // 清屏
-        }
-
-        let RenderSize {
-            min_col,
-            max_col,
-            min_row,
-            max_row,
-        } = RenderSize::new(client_width, client_height);
-
-        // 构建帧内容
-        for (y, row) in FRAMES[frame_idx].iter().enumerate() {
-            if y < min_row || y >= max_row {
-                continue;
-            }
-
-            for (x, c) in row.chars().enumerate() {
-                if x < min_col || x >= max_col {
-                    continue;
-                }
-
-                frame_data.push_str(render_color(c));
-            }
-            frame_data.push('\n');
-        }
-
-        // 显示计数器
-        if !args.no_counter {
-            let nyaned_time = NyanedTime::new(start_time, client_width);
-            if nyaned_time.text_len >= client_width.into() {
-                frame_data.push_str(&nyaned_time.nyaned);
-            } else {
-                frame_data.push_str(&nyaned_time.counter_text);
-            }
-        }
+        let frame_data = build_frame(client_width, client_height, &args, frame_idx, start_time);
 
         // 发送帧数据
         stream.write_all(frame_data.as_bytes()).await?;
