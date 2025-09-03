@@ -131,8 +131,11 @@ pub enum StatusCode {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MessageFrame {
     code: StatusCode,
+    #[serde(skip_serializing_if = "Option::is_none")]
     width: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     height: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     frame: Option<String>,
 }
 
