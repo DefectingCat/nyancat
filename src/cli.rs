@@ -7,6 +7,7 @@ pub struct Args {
     #[arg(short, long)]
     pub telnet: bool,
 
+    #[cfg(feature = "http")]
     /// http 模式
     #[arg(short = 'H', long)]
     pub http: bool,

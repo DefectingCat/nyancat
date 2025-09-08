@@ -19,14 +19,16 @@ if (!app) {
 }
 
 term.open(document.getElementById("app")!);
-// term.write("Hello \\n, World!");
 
 fitAddon.fit();
 progressAddon.onChange((state: IProgressState) => {
     console.log(state);
 });
 
-const ws = new WebSocket("ws://127.0.0.1:3000/ws");
+const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${
+    window.location.host
+}/ws`;
+const ws = new WebSocket(wsUrl);
 ws.onopen = () => {
     console.log("connected");
 };

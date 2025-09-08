@@ -3,6 +3,11 @@ name = "nyancat"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+http = ["axum", "axum-extra", "tower-http", "serde_json", "serde", "serde_repr"]
+
+
 [dependencies]
 anyhow = "1.0.99"
 clap = { version = "4.5.47", features = ["derive"] }
@@ -16,14 +21,16 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 # http
-axum = { version = "0.8.4", features = ["ws"] }
-axum-extra = { version = "0.10.1", features = ["typed-header"] }
+axum = { version = "0.8.4", features = ["ws"], optional = true }
+axum-extra = { version = "0.10.1", features = [
+    "typed-header",
+], optional = true }
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false, features = [
     "sink",
     "std",
 ] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.143"
-tower-http = { version = "0.6.6", features = ["full"] }
-serde_repr = "0.1.20"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0.143", optional = true }
+tower-http = { version = "0.6.6", features = ["full"], optional = true }
+serde_repr = { version = "0.1.20", optional = true }

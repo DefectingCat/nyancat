@@ -5,6 +5,7 @@ use crate::cli::Args;
 
 mod animation;
 mod cli;
+#[cfg(feature = "http")]
 mod http;
 mod logging;
 mod standalone;
@@ -21,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    #[cfg(feature = "http")]
     if args.http {
         http::run_http(args).await?;
         return Ok(());
