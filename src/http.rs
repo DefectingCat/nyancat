@@ -15,6 +15,7 @@ use axum::{
 use axum_extra::{TypedHeader, headers};
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::{
     sync::mpsc::{self, Sender},
     time::{Instant, sleep},
@@ -117,7 +118,7 @@ async fn ws(
     ws.on_upgrade(move |socket| handle_socket(socket, addr, state.args.clone()))
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
 #[repr(u8)]
 pub enum StatusCode {
     /// 初始化，请求客户端大小
@@ -128,7 +129,7 @@ pub enum StatusCode {
 }
 
 /// 消息帧
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MessageFrame {
     code: StatusCode,
     #[serde(skip_serializing_if = "Option::is_none")]
