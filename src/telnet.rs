@@ -54,7 +54,12 @@ pub fn build_frame(
 
             frame_data.push_str(render_color(c));
         }
-        frame_data.push('\n');
+
+        if args.http {
+            frame_data.push_str("\r\n");
+        } else {
+            frame_data.push('\n');
+        }
     }
 
     // 显示计数器
@@ -110,7 +115,7 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     let start_time = Instant::now();
 
     loop {
-        let frame_data = build_frame(client_width, client_height, &args, frame_idx, start_time);
+        let frame_data = build_frame(client_width, client_height, args, frame_idx, start_time);
 
         // 发送帧数据
         stream.write_all(frame_data.as_bytes()).await?;

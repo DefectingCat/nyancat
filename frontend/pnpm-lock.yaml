@@ -11,6 +11,9 @@ importers:
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-progress':
+        specifier: ^0.1.0
+        version: 0.1.0(@xterm/xterm@5.5.0)
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
@@ -304,6 +307,11 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^5.0.0
 
+  '@xterm/addon-progress@0.1.0':
+    resolution: {integrity: sha512-fDyD0QjylpZy5Go9EtNPh6NK3BU246vWe+8b6oh3BAmyHo/sQ6yTz81hdmzC18GnQyRSYn38gd4mVNZHfHdVwA==}
+    peerDependencies:
+      '@xterm/xterm': ^5.6.0-beta.94
+
   '@xterm/xterm@5.5.0':
     resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
@@ -546,6 +554,10 @@ snapshots:
   '@types/estree@1.0.8': {}
 
   '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-progress@0.1.0(@xterm/xterm@5.5.0)':
     dependencies:
       '@xterm/xterm': 5.5.0
 
