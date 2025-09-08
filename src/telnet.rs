@@ -55,9 +55,12 @@ pub fn build_frame(
             frame_data.push_str(render_color(c));
         }
 
+        #[cfg(feature = "http")]
         if args.http {
             frame_data.push_str("\r\n");
-        } else {
+        }
+        #[cfg(not(feature = "http"))]
+        {
             frame_data.push('\n');
         }
     }

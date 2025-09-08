@@ -5,8 +5,16 @@ edition = "2024"
 
 [features]
 default = []
-http = ["axum", "axum-extra", "tower-http", "serde_json", "serde", "serde_repr"]
-
+http = [
+    "axum",
+    "axum-extra",
+    "tower-http",
+    "serde_json",
+    "serde",
+    "serde_repr",
+    "tower-serve-static",
+    "include_dir",
+]
 
 [dependencies]
 anyhow = "1.0.99"
@@ -15,8 +23,6 @@ colored = "3.0.0"
 crossterm = "0.29.0"
 
 tokio = { version = "1.47.1", features = ["full"] }
-# tokio-tungstenite = "0.27.0"
-# tower-http = { version = "0.6.6", features = ["fs", "trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
@@ -34,3 +40,5 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0.143", optional = true }
 tower-http = { version = "0.6.6", features = ["full"], optional = true }
 serde_repr = { version = "0.1.20", optional = true }
+tower-serve-static = { version = "0.1.1", optional = true }
+include_dir = { version = "0.7.4", optional = true }

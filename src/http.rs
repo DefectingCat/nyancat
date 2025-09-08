@@ -10,10 +10,11 @@ use axum::{
     },
     http::{HeaderMap, HeaderValue, Request},
     response::Response,
-    routing::{any, get},
+    routing::any,
 };
 use axum_extra::{TypedHeader, headers};
 use futures::{sink::SinkExt, stream::StreamExt};
+use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::{
@@ -21,6 +22,7 @@ use tokio::{
     time::{Instant, sleep},
 };
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
+use tower_serve_static::ServeDir;
 use tracing::{Span, error, info, info_span};
 
 use crate::{animation::FRAMES, cli::Args, telnet::build_frame};
@@ -78,10 +80,15 @@ struct AppState {
     args: Args,
 }
 
+static FRONTEND_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
+
 pub async fn run_http(args: Args) -> anyhow::Result<()> {
     let state = AppState { args };
+
+    let service = ServeDir::new(&FRONTEND_DIR);
+
     let app = Router::new()
-        .route("/", get(handler))
+        .fallback_service(service)
         .route("/ws", any(ws))
         .with_state(state);
 
@@ -95,10 +102,6 @@ pub async fn run_http(args: Args) -> anyhow::Result<()> {
     )
     .await?;
     Ok(())
-}
-
-async fn handler() -> &'static str {
-    "Hello, World!"
 }
 
 async fn ws(
