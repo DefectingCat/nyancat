@@ -13,11 +13,29 @@
                 margin: 0;
                 padding: 0;
             }
+
+            .xterm {
+                height: 100%;
+            }
+            .xterm-viewport {
+                overflow: hidden !important;
+            }
+
+            .github {
+                position: absolute;
+                top: 0;
+                right: 0;
+            }
         </style>
         <title>Nyancat!</title>
     </head>
     <body>
         <div id="app"></div>
+        <div class="github">
+            <a href="https://github.com/DefectingCat/nyancat" target="_blank">
+                <img src="/github.svg" alt="GitHub" />
+            </a>
+        </div>
         <script type="module" src="/src/main.ts"></script>
     </body>
 </html>
