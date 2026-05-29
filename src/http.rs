@@ -288,8 +288,15 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                 }
                 // 监听客户端 resize 消息
                 maybe_msg = rx_from_ws.recv() => {
-                    if let Some(msg) = maybe_msg {
+                    if let Some(mut msg) = maybe_msg {
                         last_activity = Instant::now();
+
+                        // 快速排空 channel，只取最新的 resize 消息，
+                        // 避免逐条回放历史尺寸导致动画"追赶"
+                        while let Ok(next) = rx_from_ws.try_recv() {
+                            msg = next;
+                        }
+
                         match msg.code {
                             FrameCode::Ok => {
                                 if let Some(w) = msg.width {
