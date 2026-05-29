@@ -1,15 +1,15 @@
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::atomic::{AtomicUsize, Ordering}};
 
 use anyhow::{Context, bail};
 use axum::{
-    Router,
+    Json, Router,
     extract::{
         ConnectInfo, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderValue, Request},
-    response::Response,
-    routing::any,
+    http::{HeaderValue, Request, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{any, get},
 };
 use axum_extra::{TypedHeader, headers};
 use futures::{sink::SinkExt, stream::StreamExt};
@@ -17,14 +17,17 @@ use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use tokio::{
-    sync::mpsc::{self, Sender},
+    sync::{broadcast, mpsc::{self, Sender}},
     time::{Instant, sleep},
 };
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tower_serve_static::ServeDir;
-use tracing::{Span, error, info, info_span};
+use tracing::{Span, error, info, info_span, warn};
 
 use crate::{animation::FRAMES, cli::Args, telnet::build_frame};
+
+/// 活跃连接计数器
+static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// Middleware for logging each HTTP request.
 ///
@@ -60,33 +63,57 @@ pub fn logging_route(router: Router) -> Router {
 
 #[derive(Clone)]
 struct AppState {
-    // 命令行参数
     args: Args,
 }
 
 static FRONTEND_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
 
-pub async fn run_http(args: Args) -> anyhow::Result<()> {
+pub async fn run_http(
+    args: Args,
+    mut shutdown: broadcast::Receiver<()>,
+) -> anyhow::Result<()> {
     let state = AppState { args: args.clone() };
 
     let service = ServeDir::new(&FRONTEND_DIR);
 
     let app = Router::new()
+        .route("/health", get(health))
         .fallback_service(service)
         .route("/ws", any(ws))
         .with_state(state);
 
     let app = logging_route(app);
 
-    let addr = format!("0.0.0.0:{}", args.http_port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    info!("listening on {}", listener.local_addr()?);
+    let addr = format!("{}:{}", args.http_host, args.http_port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("bind to {}", addr))?;
+    info!("HTTP server listening on {}", listener.local_addr()?);
+
+    // 使用 graceful_shutdown 支持优雅关闭
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(async move {
+        let _ = shutdown.recv().await;
+        info!("HTTP server received shutdown signal");
+    })
     .await?;
+
     Ok(())
+}
+
+/// 健康检查端点
+async fn health() -> (StatusCode, Json<serde_json::Value>) {
+    let connections = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "ok",
+            "active_connections": connections,
+        })),
+    )
 }
 
 async fn ws(
@@ -95,13 +122,24 @@ async fn ws(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     state: State<AppState>,
 ) -> axum::response::Response {
-    info!("`{user_agent:?}` at {addr:?} connected.");
+    // 检查连接数限制
+    if state.args.has_connection_limit() {
+        let current = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
+        if current >= state.args.max_connections {
+            warn!(
+                "Connection limit reached ({}/{}), rejecting {}",
+                current, state.args.max_connections, addr
+            );
+            return (StatusCode::SERVICE_UNAVAILABLE, "Connection limit reached").into_response();
+        }
+    }
+
     let user_agent = if let Some(TypedHeader(user_agent)) = user_agent {
         user_agent.to_string()
     } else {
         String::from("Unknown browser")
     };
-    info!("`{user_agent}` at {addr:?} connected.");
+    info!("`{}` at {} connected via WebSocket", user_agent, addr);
 
     ws.on_upgrade(move |socket| handle_socket(socket, addr, state.args.clone()))
 }
@@ -129,6 +167,13 @@ pub struct MessageFrame {
 }
 
 async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
+    ACTIVE_CONNECTIONS.fetch_add(1, Ordering::SeqCst);
+    let _guard = ConnectionGuard;
+
+    let frame_interval = args.frame_interval();
+    let ping_interval = args.ws_ping_interval();
+    let idle_timeout = args.idle_timeout();
+
     let (mut sender, mut receiver) = socket.split();
 
     // 从 WebSocket 接收消息并发送到应用程序
@@ -149,7 +194,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
         sender
             .send(Message::Text(msg_serialized.into()))
             .await
-            .with_context(|| "Could not send message")?;
+            .with_context(|| "Could not send init message")?;
 
         // 等待客户端返回初始尺寸
         let (mut width, mut height) = loop {
@@ -175,10 +220,21 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
         // 发送动画帧，同时监听 resize 消息
         let mut frame_idx = 0;
         let start_time = Instant::now();
+        let mut last_activity = Instant::now();
+
         loop {
+            // 检查帧限制
+            if let Some(limit) = args.frames
+                && frame_idx >= limit
+            {
+                info!("WebSocket {} reached frame limit {}", who, limit);
+                break Ok(());
+            }
+
             tokio::select! {
                 // 定时发送下一帧
-                _ = sleep(Duration::from_millis(100)) => {
+                _ = sleep(frame_interval) => {
+                    last_activity = Instant::now();
                     let frame_data = build_frame(width, height, &args, frame_idx, start_time, "\r\n");
 
                     let msg = MessageFrame {
@@ -194,13 +250,30 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                     sender
                         .send(Message::Text(msg_serialized.into()))
                         .await
-                        .with_context(|| "Could not send message")?;
+                        .with_context(|| "Could not send frame message")?;
 
-                    frame_idx = (frame_idx + 1) % FRAMES.len();
+                    frame_idx += 1;
+                    if frame_idx >= FRAMES.len() {
+                        frame_idx = 0;
+                    }
+                }
+                // 定时发送 Ping（如果启用）
+                _ = async {
+                    if let Some(interval) = ping_interval {
+                        sleep(interval).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    sender
+                        .send(Message::Ping(vec![].into()))
+                        .await
+                        .with_context(|| "Could not send ping")?;
                 }
                 // 监听客户端 resize 消息
                 maybe_msg = rx_from_ws.recv() => {
                     if let Some(msg) = maybe_msg {
+                        last_activity = Instant::now();
                         match msg.code {
                             FrameCode::Ok => {
                                 if let Some(w) = msg.width {
@@ -209,7 +282,6 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                                 if let Some(h) = msg.height {
                                     height = h;
                                 }
-
                             }
                             FrameCode::Error => {
                                 bail!("Error received from client");
@@ -219,16 +291,24 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                     }
                 }
             }
+
+            // 检查空闲超时
+            if let Some(timeout) = idle_timeout
+                && last_activity.elapsed() > timeout
+            {
+                info!("WebSocket {} idle timeout after {:?}", who, timeout);
+                break Ok(());
+            }
         }
     });
 
     // This second task will receive messages from client and print them on server console
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
-            // print message and break if instructed to do so
-            process_message(msg, who, tx_from_ws.clone())
-                .await
-                .with_context(|| "Error processing message")?;
+            if let Err(e) = process_message(msg, who, tx_from_ws.clone()).await {
+                error!("Error processing message from {}: {:?}", who, e);
+                break;
+            }
         }
         anyhow::Ok(())
     });
@@ -243,7 +323,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                         Err(a) => error!("Error sending messages {a:?}")
                     }
                 },
-                Err(a) => error!("Error sending messages {a:?}")
+                Err(a) => error!("Error sending task panicked {a:?}")
             }
             recv_task.abort();
         },
@@ -251,18 +331,27 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
             match rv_b {
                 Ok(b) => {
                     match b {
-                        Ok(_) => info!("Received messages"),
+                        Ok(_) => info!("Received messages from {who}"),
                         Err(b) => error!("Error receiving messages {b:?}")
                     }
                 },
-                Err(b) => error!("Error receiving messages {b:?}")
+                Err(b) => error!("Error receiving task panicked {b:?}")
             }
             send_task.abort();
         }
     }
 
     // returning from the handler closes the websocket connection
-    info!("Websocket context {who} destroyed");
+    info!("WebSocket context {who} destroyed");
+}
+
+/// RAII guard to decrement connection count
+struct ConnectionGuard;
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// helper to print contents of messages to stdout. Has special treatment for Close.
@@ -273,8 +362,8 @@ async fn process_message(
 ) -> anyhow::Result<()> {
     match msg {
         Message::Text(t) => {
-            info!(">>> {who} sent str: {t:?}");
-            let msg = serde_json::from_str::<MessageFrame>(&t)?;
+            let msg = serde_json::from_str::<MessageFrame>(&t)
+                .with_context(|| format!("invalid JSON from {}", who))?;
             tx_from_ws.send(msg).await?;
         }
         Message::Binary(d) => {

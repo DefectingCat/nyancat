@@ -1,10 +1,13 @@
 use std::time::Duration;
 
+use anyhow::Context;
 use tokio::{
-    io::{self, AsyncReadExt, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::broadcast,
     time::{Instant, sleep},
 };
+use tracing::{error, info};
 
 use crate::{
     animation::{FRAMES, NyanedTime, RenderSize, render_color},
@@ -73,9 +76,16 @@ pub fn build_frame(
 }
 
 // 处理Telnet客户端
-pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Result<()> {
-    let addr = stream.peer_addr()?;
-    println!("New telnet connection from {}", addr);
+async fn handle_telnet_client(
+    mut stream: TcpStream,
+    args: &Args,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) -> anyhow::Result<()> {
+    let addr = stream.peer_addr().context("get peer address")?;
+    info!("New telnet connection from {}", addr);
+
+    let frame_interval = args.frame_interval();
+    let handshake_timeout = args.handshake_timeout();
 
     // Telnet握手
     let handshake = [
@@ -83,35 +93,55 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
         IAC, DO, TTYPE, // 要求终端类型
         IAC, DO, NAWS, // 要求窗口大小
     ];
-    stream.write_all(&handshake).await?;
+    stream.write_all(&handshake).await.context("send handshake")?;
 
     // 读取客户端响应（带累积缓冲区处理跨read的Telnet协商）
     let mut buf = [0; 1024];
-    let mut client_width = 80;
-    let mut client_height = 24;
+    let mut client_width = args.default_width;
+    let mut client_height = args.default_height;
     let mut accum = Vec::new();
+    let mut handshake_done = false;
 
     loop {
-        match tokio::time::timeout(Duration::from_secs(30), stream.read(&mut buf)).await {
+        // 检查关闭信号
+        if crate::shutdown::is_shutdown(&mut shutdown_rx) {
+            info!("Telnet client {} shutting down due to signal", addr);
+            return Ok(());
+        }
+
+        match tokio::time::timeout(handshake_timeout, stream.read(&mut buf)).await {
             Ok(Ok(0)) => break, // 连接关闭
             Ok(Ok(n)) => {
                 accum.extend_from_slice(&buf[..n]);
-                let (consumed, found) = parse_telnet_commands(&accum, &mut client_width, &mut client_height);
+                let (consumed, found) =
+                    parse_telnet_commands(&accum, &mut client_width, &mut client_height);
                 accum.drain(..consumed);
                 if found {
-                    // 成功获取窗口大小，开始发送动画
+                    handshake_done = true;
                     break;
                 }
             }
             Ok(Err(e)) => {
-                eprintln!("Read error: {}", e);
-                break;
+                error!("Telnet read error from {}: {}", addr, e);
+                return Err(e.into());
             }
             Err(_) => {
-                eprintln!("Telnet handshake timeout");
-                break;
+                error!("Telnet handshake timeout from {}", addr);
+                break; // 使用默认值继续
             }
         }
+    }
+
+    if handshake_done {
+        info!(
+            "Telnet client {} negotiated size: {}x{}",
+            addr, client_width, client_height
+        );
+    } else {
+        info!(
+            "Telnet client {} using default size: {}x{}",
+            addr, client_width, client_height
+        );
     }
 
     // 发送动画帧
@@ -119,19 +149,29 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     let start_time = Instant::now();
 
     loop {
+        // 检查关闭信号
+        if crate::shutdown::is_shutdown(&mut shutdown_rx) {
+            info!("Telnet client {} shutting down due to signal", addr);
+            break;
+        }
+
         let frame_data = build_frame(client_width, client_height, args, frame_idx, start_time, "\n");
 
         // 发送帧数据
-        stream.write_all(frame_data.as_bytes()).await?;
-        stream.flush().await?;
+        stream
+            .write_all(frame_data.as_bytes())
+            .await
+            .context("send frame")?;
+        stream.flush().await.context("flush stream")?;
 
         // 控制帧率
-        sleep(Duration::from_millis(100)).await;
+        sleep(frame_interval).await;
 
         // 检查帧限制
         if let Some(limit) = args.frames
-            && frame_idx >= limit
+            && frame_idx + 1 >= limit
         {
+            info!("Telnet client {} reached frame limit {}", addr, limit);
             break;
         }
 
@@ -206,18 +246,46 @@ fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> (usi
 }
 
 // 运行Telnet服务器
-pub async fn run_telnet_server(args: &Args) -> io::Result<()> {
-    let addr = format!("0.0.0.0:{}", args.port);
-    let listener = TcpListener::bind(&addr).await?;
-    println!("Telnet server running on {}", addr);
+pub async fn run_telnet_server(
+    args: &Args,
+    shutdown: broadcast::Receiver<()>,
+) -> anyhow::Result<()> {
+    let addr = format!("{}:{}", args.telnet_host, args.port);
+    let listener = TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("bind to {}", addr))?;
+    info!("Telnet server running on {}", addr);
+
+    let mut shutdown_rx = shutdown;
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        // 检查关闭信号
+        if crate::shutdown::is_shutdown(&mut shutdown_rx) {
+            info!("Telnet server shutting down");
+            break;
+        }
+
+        // 使用 timeout 避免阻塞在 accept 上
+        let accept_timeout = Duration::from_secs(1);
+        let result = tokio::time::timeout(accept_timeout, listener.accept()).await;
+
+        let (stream, _) = match result {
+            Ok(Ok(conn)) => conn,
+            Ok(Err(e)) => {
+                error!("Telnet accept error: {}", e);
+                continue;
+            }
+            Err(_) => continue, // timeout, check shutdown again
+        };
+
         let cli_args = args.clone();
+        let client_shutdown = shutdown_rx.resubscribe();
         tokio::spawn(async move {
-            if let Err(e) = handle_telnet_client(stream, &cli_args).await {
-                eprintln!("Telnet client error: {}", e);
+            if let Err(e) = handle_telnet_client(stream, &cli_args, client_shutdown).await {
+                error!("Telnet client error: {}", e);
             }
         });
     }
+
+    Ok(())
 }

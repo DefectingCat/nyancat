@@ -36,9 +36,14 @@ impl Drop for TerminalGuard {
 }
 
 // 独立模式运行
-pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
+pub async fn run_standalone(
+    args: &Args,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) -> anyhow::Result<()> {
     let _guard = TerminalGuard::new()?;
     let mut stdout = io::stdout();
+
+    let frame_interval = args.frame_interval();
 
     // 监听退出信号 (spawn_blocking because crossterm events are synchronous)
     let event_loop = tokio::task::spawn_blocking(move || {
@@ -75,6 +80,11 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
             break;
         }
 
+        // 检查关闭信号
+        if crate::shutdown::is_shutdown(&mut shutdown_rx) {
+            break;
+        }
+
         // 获取终端大小
         let size = crossterm::terminal::size()?;
         let (terminal_width, terminal_height) = size;
@@ -86,28 +96,29 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
             max_row,
         } = RenderSize::new(terminal_width, terminal_height);
 
-        // 渲染当前帧
-        render_frame(FRAMES[frame_idx], min_row, max_row, min_col, max_col)?;
+        // 渲染当前帧（批量构建）
+        let frame_text = build_frame_text(FrameParams {
+            frame: FRAMES[frame_idx],
+            min_row,
+            max_row,
+            min_col,
+            max_col,
+            args,
+            start_time,
+            terminal_width,
+            terminal_height,
+        });
 
-        // 显示计数器
-        if !args.no_counter {
-            let nyaned_time = NyanedTime::new(start_time, terminal_width);
-            if nyaned_time.text_len >= terminal_width.into() {
-                execute!(stdout, cursor::MoveTo(0, size.1 - 1))?;
-                print!("{}", nyaned_time.nyaned);
-            } else {
-                execute!(stdout, cursor::MoveTo(0, size.1))?;
-                print!("{}", nyaned_time.counter_text);
-            }
-            stdout.flush()?;
-        }
+        execute!(stdout, cursor::MoveTo(0, 0))?;
+        stdout.write_all(frame_text.as_bytes())?;
+        stdout.flush()?;
 
         // 控制帧率
-        sleep(Duration::from_millis(100)).await;
+        sleep(frame_interval).await;
 
         // 检查帧限制
         if let Some(limit) = args.frames
-            && frame_idx >= limit
+            && frame_idx + 1 >= limit
         {
             break;
         }
@@ -119,39 +130,70 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 渲染帧到终端
-pub fn render_frame(
-    frame: &[&str],
+struct FrameParams<'a> {
+    frame: &'a [&'a str],
     min_row: usize,
     max_row: usize,
     min_col: usize,
     max_col: usize,
-) -> io::Result<()> {
-    let mut stdout = io::stdout();
+    args: &'a Args,
+    start_time: Instant,
+    terminal_width: u16,
+    terminal_height: u16,
+}
 
-    execute!(stdout, cursor::MoveTo(0, 0))?;
+/// 构建完整帧文本（批量渲染）
+fn build_frame_text(params: FrameParams) -> String {
+    let FrameParams {
+        frame,
+        min_row,
+        max_row,
+        min_col,
+        max_col,
+        args,
+        start_time,
+        terminal_width,
+        terminal_height,
+    } = params;
 
-    // 渲染帧内容
-    // 行
+    let mut output = String::new();
+
+    // 清屏
+    if !args.no_clear {
+        output.push_str("\x1B[2J\x1B[1;1H");
+    }
+
+    // 帧内容
     for (y, row) in frame.iter().enumerate() {
         if y < min_row || y >= max_row {
             continue;
         }
 
-        let mut line = String::with_capacity((max_col.saturating_sub(min_col)) * 20);
-        // 列
         for (x, c) in row.chars().enumerate() {
             if x < min_col || x >= max_col {
                 continue;
             }
-
-            line.push_str(render_color(c));
+            output.push_str(render_color(c));
         }
-        // 渲染的行数减去最小行数，就是跳过的行
-        execute!(stdout, cursor::MoveTo(0, (y - min_row) as u16))?;
-        write!(stdout, "{}", line)?;
+
+        // 只在非最后一行添加换行
+        if y < max_row - 1 {
+            output.push('\n');
+        }
     }
 
-    stdout.flush()?;
-    Ok(())
+    // 计数器
+    if !args.no_counter {
+        let nyaned_time = NyanedTime::new(start_time, terminal_width);
+        if nyaned_time.text_len >= terminal_width.into() {
+            output.push('\n');
+            output.push_str(&nyaned_time.nyaned);
+        } else {
+            let counter_line = (terminal_height.saturating_sub(1)).max(1);
+            output.push_str(&format!("\x1B[{};1H", counter_line));
+            output.push_str(&nyaned_time.counter_text);
+        }
+    }
+
+    output
 }

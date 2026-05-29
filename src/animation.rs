@@ -884,6 +884,11 @@ impl NyanedTime {
     ///
     /// * `(counter_text, counter_width)`: 计数器文本和计数器宽度
     pub fn new(start_time: Instant, terminal_width: u16) -> Self {
+        Self::new_with_offset(start_time, terminal_width, COUNTER_OFFSET)
+    }
+
+    /// 显示计数器（自定义偏移量）
+    pub fn new_with_offset(start_time: Instant, terminal_width: u16, offset: usize) -> Self {
         // 计数器显式长度，终端与单个帧的长度
         let counter_width = if usize::from(terminal_width) < FRAME_WIDTH {
             terminal_width as usize
@@ -895,7 +900,7 @@ impl NyanedTime {
         let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
         let text_len = nyaned.len();
         let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
-        let padding = (counter_width - text_len) / 2 + COUNTER_OFFSET;
+        let padding = (counter_width - text_len) / 2 + offset;
         let counter_text = format!(
             "{}{}{}",
             "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
