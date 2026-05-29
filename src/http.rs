@@ -164,6 +164,8 @@ pub struct MessageFrame {
     height: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     frame: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
@@ -188,6 +190,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
             width: None,
             height: None,
             frame: None,
+            error: None,
         };
         let msg_serialized =
             serde_json::to_string(&msg).with_context(|| "Could not serialize init message")?;
@@ -210,7 +213,19 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                         break (w, h);
                     }
                     FrameCode::Error => {
-                        bail!("Error received from client");
+                        let client_err = msg.error.unwrap_or_else(|| "unknown client error".into());
+                        warn!("Client {} sent error during handshake: {}", who, client_err);
+                        let error_frame = MessageFrame {
+                            code: FrameCode::Error,
+                            width: None,
+                            height: None,
+                            frame: None,
+                            error: Some(format!("handshake aborted: {}", client_err)),
+                        };
+                        let serialized = serde_json::to_string(&error_frame)
+                            .with_context(|| "Could not serialize error frame")?;
+                        sender.send(Message::Text(serialized.into())).await.ok();
+                        bail!("Error received from client: {}", client_err);
                     }
                     _ => continue,
                 }
@@ -242,6 +257,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                         width: None,
                         height: None,
                         frame: Some(frame_data),
+                        error: None,
                     };
 
                     let msg_serialized = serde_json::to_string(&msg)
@@ -284,7 +300,19 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                                 }
                             }
                             FrameCode::Error => {
-                                bail!("Error received from client");
+                                let client_err = msg.error.unwrap_or_else(|| "unknown client error".into());
+                                warn!("Client {} sent error during stream: {}", who, client_err);
+                                let error_frame = MessageFrame {
+                                    code: FrameCode::Error,
+                                    width: None,
+                                    height: None,
+                                    frame: None,
+                                    error: Some(format!("stream error: {}", client_err)),
+                                };
+                                let serialized = serde_json::to_string(&error_frame)
+                                    .with_context(|| "Could not serialize error frame")?;
+                                sender.send(Message::Text(serialized.into())).await.ok();
+                                bail!("Error received from client: {}", client_err);
                             }
                             _ => {}
                         }

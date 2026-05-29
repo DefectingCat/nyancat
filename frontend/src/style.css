@@ -15,6 +15,39 @@ body,
     overflow: hidden !important;
 }
 
+#connection-status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    z-index: 100;
+    pointer-events: none;
+    opacity: 0.9;
+}
+
+.status-connecting {
+    background: #f0ad4e;
+    color: #000;
+}
+
+.status-connected {
+    background: #5cb85c;
+    color: #fff;
+}
+
+.status-disconnected {
+    background: #d9534f;
+    color: #fff;
+}
+
+.status-reconnecting {
+    background: #f0ad4e;
+    color: #000;
+}
+
 .github {
     position: absolute;
     top: 0;
