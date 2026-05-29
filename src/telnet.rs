@@ -289,3 +289,142 @@ pub async fn run_telnet_server(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_naws_subnegotiation() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![IAC, SB, NAWS, 0, 80, 0, 24, IAC, SE]; // 窗口大小 80x24
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(found, "Should find NAWS data");
+        assert_eq!(width, 80);
+        assert_eq!(height, 24);
+        assert_eq!(consumed, 9, "Should consume all bytes");
+    }
+
+    #[test]
+    fn test_parse_large_window_size() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        // 窗口大小 500x300 (0x01F4 x 0x012C)
+        let data = vec![IAC, SB, NAWS, 0x01, 0xF4, 0x01, 0x2C, IAC, SE];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(found);
+        assert_eq!(width, 500);
+        assert_eq!(height, 300);
+        assert_eq!(consumed, 9);
+    }
+
+    #[test]
+    fn test_parse_non_naws_command() {
+        let mut width = 80u16;
+        let mut height = 24u16;
+        let data = vec![IAC, WILL, SGA]; // 不是 NAWS
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found, "Should not find NAWS data");
+        assert_eq!(width, 80, "Width should remain unchanged");
+        assert_eq!(height, 24, "Height should remain unchanged");
+        assert_eq!(consumed, 3, "Should consume the 3-byte command");
+    }
+
+    #[test]
+    fn test_parse_incomplete_subnegotiation() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![IAC, SB, NAWS]; // 缺少结束标记和数据
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found, "Should not find complete NAWS data");
+        assert_eq!(consumed, 0, "Should not consume any bytes");
+    }
+
+    #[test]
+    fn test_parse_incomplete_command() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![IAC, WILL]; // 缺少 option 字节
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found);
+        assert_eq!(consumed, 0, "Should not consume incomplete command");
+    }
+
+    #[test]
+    fn test_parse_multiple_commands() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![
+            IAC, WILL, SGA,
+            IAC, DO, TTYPE,
+            IAC, SB, NAWS, 0, 100, 0, 50, IAC, SE,
+        ];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(found, "Should find NAWS among multiple commands");
+        assert_eq!(width, 100);
+        assert_eq!(height, 50);
+        assert_eq!(consumed, 15, "Should consume all bytes");
+    }
+
+    #[test]
+    fn test_parse_with_non_command_data() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![
+            b'S', b'o', b'm', b'e', // 普通文本数据
+            IAC, SB, NAWS, 0, 80, 0, 24, IAC, SE,
+        ];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(found);
+        assert_eq!(width, 80);
+        assert_eq!(height, 24);
+        // 应该消费所有字节（包括前面的非命令数据）
+        assert_eq!(consumed, 13);
+    }
+
+    #[test]
+    fn test_parse_naws_with_short_data() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        // NAWS 子协商但只有 2 字节数据（需要至少 4 字节）
+        let data = vec![IAC, SB, NAWS, 0, 80, IAC, SE];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found, "Should not find valid NAWS with insufficient data");
+        assert_eq!(consumed, 7, "Should still consume the complete subnegotiation");
+    }
+
+    #[test]
+    fn test_parse_empty_data() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data: Vec<u8> = vec![];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found);
+        assert_eq!(consumed, 0);
+    }
+
+    #[test]
+    fn test_parse_no_iac_data() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let data = vec![b'H', b'e', b'l', b'l', b'o'];
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(!found);
+        assert_eq!(consumed, 5, "Should consume all non-IAC data");
+    }
+
+    #[test]
+    fn test_parse_naws_at_end_of_buffer() {
+        let mut width = 0u16;
+        let mut height = 0u16;
+        // 前面有大量普通数据，NAWS 在末尾
+        let mut data = vec![b'x'; 100];
+        data.extend_from_slice(&[IAC, SB, NAWS, 0, 80, 0, 24, IAC, SE]);
+        let (consumed, found) = parse_telnet_commands(&data, &mut width, &mut height);
+        assert!(found);
+        assert_eq!(width, 80);
+        assert_eq!(height, 24);
+        assert_eq!(consumed, 109);
+    }
+}

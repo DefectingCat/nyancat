@@ -68,3 +68,59 @@ impl Default for Shutdown {
 pub fn is_shutdown(rx: &mut broadcast::Receiver<()>) -> bool {
     matches!(rx.try_recv(), Ok(()) | Err(broadcast::error::TryRecvError::Closed))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shutdown_new() {
+        let shutdown = Shutdown::new();
+        let mut rx = shutdown.subscribe();
+        // 未触发时，try_recv 应该返回 Empty
+        assert!(matches!(
+            rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn test_is_shutdown_not_triggered() {
+        let shutdown = Shutdown::new();
+        let mut rx = shutdown.subscribe();
+        assert!(!is_shutdown(&mut rx));
+    }
+
+    #[test]
+    fn test_is_shutdown_after_notify() {
+        let shutdown = Shutdown::new();
+        let mut rx = shutdown.subscribe();
+        shutdown.notify();
+        assert!(is_shutdown(&mut rx));
+    }
+
+    #[test]
+    fn test_is_shutdown_after_closed() {
+        let shutdown = Shutdown::new();
+        let mut rx = shutdown.subscribe();
+        drop(shutdown); // Sender 被 drop 后，channel 关闭
+        assert!(is_shutdown(&mut rx));
+    }
+
+    #[test]
+    fn test_multiple_subscribers_receive_notify() {
+        let shutdown = Shutdown::new();
+        let mut rx1 = shutdown.subscribe();
+        let mut rx2 = shutdown.subscribe();
+        shutdown.notify();
+        assert!(is_shutdown(&mut rx1));
+        assert!(is_shutdown(&mut rx2));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let shutdown: Shutdown = Default::default();
+        let mut rx = shutdown.subscribe();
+        assert!(!is_shutdown(&mut rx));
+    }
+}

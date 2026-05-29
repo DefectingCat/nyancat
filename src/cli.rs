@@ -118,3 +118,148 @@ impl Args {
         self.max_connections > 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_default_fps() {
+        let args = Args::try_parse_from(["nyancat"]).unwrap();
+        assert_eq!(args.fps, 10);
+    }
+
+    #[test]
+    fn test_frame_interval_ms_default() {
+        let args = Args::try_parse_from(["nyancat"]).unwrap();
+        assert_eq!(args.frame_interval_ms(), 100); // 1000 / 10 = 100
+    }
+
+    #[test]
+    fn test_frame_interval_ms_custom_fps() {
+        let args = Args::try_parse_from(["nyancat", "-f", "20"]).unwrap();
+        assert_eq!(args.frame_interval_ms(), 50); // 1000 / 20 = 50
+    }
+
+    #[test]
+    fn test_frame_interval_ms_zero_fps() {
+        let args = Args::try_parse_from(["nyancat", "-f", "0"]).unwrap();
+        assert_eq!(args.frame_interval_ms(), 1000); // max(1, 0) = 1, 1000 / 1 = 1000
+    }
+
+    #[test]
+    fn test_frame_interval() {
+        let args = Args::try_parse_from(["nyancat", "-f", "50"]).unwrap();
+        assert_eq!(args.frame_interval(), std::time::Duration::from_millis(20));
+    }
+
+    #[test]
+    fn test_handshake_timeout_default() {
+        let args = Args::try_parse_from(["nyancat"]).unwrap();
+        assert_eq!(args.handshake_timeout(), std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_handshake_timeout_custom() {
+        let args = Args::try_parse_from(["nyancat", "--handshake-timeout", "60"]).unwrap();
+        assert_eq!(args.handshake_timeout(), std::time::Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_telnet_defaults() {
+        let args = Args::try_parse_from(["nyancat"]).unwrap();
+        assert_eq!(args.port, 23);
+        assert_eq!(args.telnet_host, "0.0.0.0");
+        assert_eq!(args.default_width, 80);
+        assert_eq!(args.default_height, 24);
+    }
+
+    #[test]
+    fn test_frames_option() {
+        let args = Args::try_parse_from(["nyancat", "-F", "100"]).unwrap();
+        assert_eq!(args.frames, Some(100));
+    }
+
+    #[test]
+    fn test_no_counter_flag() {
+        let args = Args::try_parse_from(["nyancat", "-n"]).unwrap();
+        assert!(args.no_counter);
+    }
+
+    #[test]
+    fn test_no_clear_flag() {
+        let args = Args::try_parse_from(["nyancat", "-e"]).unwrap();
+        assert!(args.no_clear);
+    }
+
+    #[test]
+    fn test_telnet_mode() {
+        let args = Args::try_parse_from(["nyancat", "-t"]).unwrap();
+        assert!(args.telnet);
+    }
+
+    #[cfg(feature = "http")]
+    mod http_tests {
+        use super::*;
+
+        #[test]
+        fn test_http_mode() {
+            let args = Args::try_parse_from(["nyancat", "-H"]).unwrap();
+            assert!(args.http);
+        }
+
+        #[test]
+        fn test_http_defaults() {
+            let args = Args::try_parse_from(["nyancat"]).unwrap();
+            assert_eq!(args.http_port, 3000);
+            assert_eq!(args.http_host, "0.0.0.0");
+        }
+
+        #[test]
+        fn test_ws_ping_interval_zero() {
+            let args = Args::try_parse_from(["nyancat", "--ws-ping-interval", "0"]).unwrap();
+            assert_eq!(args.ws_ping_interval(), None);
+        }
+
+        #[test]
+        fn test_ws_ping_interval_nonzero() {
+            let args =
+                Args::try_parse_from(["nyancat", "--ws-ping-interval", "30"]).unwrap();
+            assert_eq!(
+                args.ws_ping_interval(),
+                Some(std::time::Duration::from_secs(30))
+            );
+        }
+
+        #[test]
+        fn test_idle_timeout_zero() {
+            let args = Args::try_parse_from(["nyancat", "--idle-timeout", "0"]).unwrap();
+            assert_eq!(args.idle_timeout(), None);
+        }
+
+        #[test]
+        fn test_idle_timeout_nonzero() {
+            let args = Args::try_parse_from(["nyancat", "--idle-timeout", "120"]).unwrap();
+            assert_eq!(
+                args.idle_timeout(),
+                Some(std::time::Duration::from_secs(120))
+            );
+        }
+
+        #[test]
+        fn test_has_connection_limit_enabled() {
+            let args =
+                Args::try_parse_from(["nyancat", "--max-connections", "100"]).unwrap();
+            assert!(args.has_connection_limit());
+            assert_eq!(args.max_connections, 100);
+        }
+
+        #[test]
+        fn test_has_connection_limit_disabled() {
+            let args = Args::try_parse_from(["nyancat"]).unwrap();
+            assert!(!args.has_connection_limit());
+            assert_eq!(args.max_connections, 0);
+        }
+    }
+}

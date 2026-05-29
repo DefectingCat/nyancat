@@ -900,7 +900,7 @@ impl NyanedTime {
         let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
         let text_len = nyaned.len();
         let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
-        let padding = (counter_width - text_len) / 2 + offset;
+        let padding = counter_width.saturating_sub(text_len) / 2 + offset;
         let counter_text = format!(
             "{}{}{}",
             "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
@@ -978,5 +978,130 @@ mod tests {
         assert_eq!(size.max_col, 64);
         assert_eq!(size.min_row, 0);
         assert_eq!(size.max_row, 63); // 0 + (64-1) = 63
+    }
+
+    #[test]
+    fn test_frames_consistency() {
+        // 验证所有帧具有相同的行数
+        let expected_rows = FRAME_HEIGHT;
+        for (i, frame) in FRAMES.iter().enumerate() {
+            assert_eq!(
+                frame.len(),
+                expected_rows,
+                "Frame {} has {} rows, expected {}",
+                i,
+                frame.len(),
+                expected_rows
+            );
+        }
+
+        // 验证所有帧的所有行具有相同的列数
+        let expected_cols = FRAME_WIDTH;
+        for (i, frame) in FRAMES.iter().enumerate() {
+            for (j, row) in frame.iter().enumerate() {
+                assert_eq!(
+                    row.len(),
+                    expected_cols,
+                    "Frame {} row {} has {} cols, expected {}",
+                    i,
+                    j,
+                    row.len(),
+                    expected_cols
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_frames_all_chars_mapped() {
+        // 收集所有帧中出现的唯一字符
+        let mut chars = std::collections::HashSet::new();
+        for frame in FRAMES.iter() {
+            for row in frame.iter() {
+                for c in row.chars() {
+                    chars.insert(c);
+                }
+            }
+        }
+
+        // 验证每个字符都有对应的映射（不会回退到默认）
+        let known_chars: std::collections::HashSet<char> = [
+            ',', '.', '\'', '@', '$', '-', '>', '&', '+', '#', '=', ';', '*', '%',
+        ]
+        .into_iter()
+        .collect();
+
+        for c in &chars {
+            assert!(
+                known_chars.contains(c),
+                "Character '{}' in frames has no explicit color mapping",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_nyaned_time_format() {
+        let start = Instant::now();
+        let nt = NyanedTime::new(start, 128);
+
+        // 验证 nyand 文本格式
+        assert!(nt.nyaned.starts_with("You have nyaned for"));
+        assert!(nt.nyaned.ends_with("seconds!"));
+
+        // text_len 应该等于 nyaned 的字符长度
+        assert_eq!(nt.text_len, nt.nyaned.len());
+
+        // counter_text 应该包含 nyaned 文本
+        assert!(nt.counter_text.contains(&nt.nyaned));
+
+        // counter_text 应该包含 ANSI 颜色代码
+        assert!(nt.counter_text.contains("\x1B["));
+    }
+
+    #[test]
+    fn test_nyaned_time_wide_terminal() {
+        let start = Instant::now();
+        let nt = NyanedTime::new(start, 128);
+
+        // 对于宽终端，文本长度应该小于终端宽度
+        assert!(nt.text_len < 128, "text_len={} should be < 128", nt.text_len);
+
+        // counter_text 应该是带背景色的格式化版本
+        assert!(nt.counter_text.contains("\x1B[48;5;17m"));
+    }
+
+    #[test]
+    fn test_nyaned_time_narrow_terminal() {
+        let start = Instant::now();
+        let nt = NyanedTime::new(start, 20);
+
+        // 对于窄终端（宽度小于文本长度），文本长度会超过终端宽度
+        assert!(nt.text_len >= 20, "text_len={} should be >= 20", nt.text_len);
+
+        // counter_text 仍然包含背景色填充（使用 saturating_sub 避免下溢）
+        assert!(nt.counter_text.contains(&nt.nyaned));
+        assert!(nt.counter_text.contains("\x1B[48;5;17m"));
+    }
+
+    #[test]
+    fn test_nyaned_time_with_custom_offset() {
+        let start = Instant::now();
+        let nt_default = NyanedTime::new(start, 100);
+        let nt_offset = NyanedTime::new_with_offset(start, 100, 0);
+
+        // 偏移量不同，counter_text 长度应该不同
+        assert_ne!(nt_default.counter_text.len(), nt_offset.counter_text.len());
+    }
+
+    #[test]
+    fn test_render_size_single_cell_terminal() {
+        // 极端情况：终端尺寸为 1x1
+        let size = RenderSize::new(1, 1);
+        // term_half_width = 0, min_col = (64 - 0) / 2 = 32
+        assert_eq!(size.min_col, 32);
+        assert_eq!(size.max_col, 32); // 32 + 0 = 32
+        assert_eq!(size.min_row, 31); // (64 - 1) / 2 = 31
+        assert_eq!(size.max_row, 31); // 31 + (1 - 1) = 31
     }
 }
