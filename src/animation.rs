@@ -860,19 +860,12 @@ impl RenderSize {
     }
 }
 
+/// 计数器水平偏移量，用于视觉居中微调
+const COUNTER_OFFSET: usize = 7;
+
 pub struct NyanedTime {
-    // 计数器宽度
-    // pub width: usize,
-    // 终端宽度
-    // pub terminal_width: usize,
-    // 计时
-    // pub elapsed: u64,
     /// 计数器文本长度
     pub text_len: usize,
-    /// 计数器背景颜色
-    // pub bg: Color,
-    // 计数器填充字符串的长度
-    // pub padding: usize,
     /// 未添加背景的计数文本
     pub nyaned: String,
     /// 添加背景的计数文本
@@ -902,7 +895,7 @@ impl NyanedTime {
         let nyaned = format!("You have nyaned for {:.1} seconds!", elapsed);
         let text_len = nyaned.len();
         let bg = Color::TrueColor { r: 0, g: 0, b: 91 };
-        let padding = (counter_width - text_len) / 2 + 7;
+        let padding = (counter_width - text_len) / 2 + COUNTER_OFFSET;
         let counter_text = format!(
             "{}{}{}",
             "\x1B[48;5;17m  \x1B[0m".repeat(padding + 1),
@@ -910,12 +903,7 @@ impl NyanedTime {
             "\x1B[48;5;17m  \x1B[0m".repeat(padding),
         );
         Self {
-            // width: text_len,
-            // terminal_width: terminal_width as usize,
-            // elapsed,
             text_len,
-            // bg,
-            // padding,
             nyaned,
             counter_text,
         }

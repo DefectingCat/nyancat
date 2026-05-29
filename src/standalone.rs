@@ -7,7 +7,7 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
-    terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use tokio::time::{Instant, sleep};
 
@@ -23,7 +23,7 @@ struct TerminalGuard;
 impl TerminalGuard {
     fn new() -> io::Result<Self> {
         enable_raw_mode()?;
-        execute!(io::stdout(), LeaveAlternateScreen, cursor::Hide)?;
+        execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)?;
         Ok(Self)
     }
 }
@@ -43,14 +43,17 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
     // 监听退出信号 (spawn_blocking because crossterm events are synchronous)
     let event_loop = tokio::task::spawn_blocking(move || {
         loop {
-            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                if let Ok(Event::Key(event)) = event::read() {
-                    if event.kind == KeyEventKind::Press
+            match event::poll(Duration::from_millis(100)) {
+                Ok(true) => {
+                    if let Ok(Event::Key(event)) = event::read()
+                        && event.kind == KeyEventKind::Press
                         && (event.code == KeyCode::Esc || event.code == KeyCode::Char('q'))
                     {
                         break;
                     }
                 }
+                Ok(false) => continue,
+                Err(_) => break,
             }
         }
     });
@@ -135,7 +138,7 @@ pub fn render_frame(
             continue;
         }
 
-        let mut line = String::new();
+        let mut line = String::with_capacity((max_col.saturating_sub(min_col)) * 20);
         // 列
         for (x, c) in row.chars().enumerate() {
             if x < min_col || x >= max_col {
@@ -146,7 +149,7 @@ pub fn render_frame(
         }
         // 渲染的行数减去最小行数，就是跳过的行
         execute!(stdout, cursor::MoveTo(0, (y - min_row) as u16))?;
-        println!("{}", line);
+        write!(stdout, "{}", line)?;
     }
 
     stdout.flush()?;

@@ -27,6 +27,7 @@ pub fn build_frame(
     args: &Args,
     frame_idx: usize,
     start_time: Instant,
+    newline: &str,
 ) -> String {
     // 渲染帧到缓冲区
     let mut frame_data = String::new();
@@ -55,14 +56,7 @@ pub fn build_frame(
             frame_data.push_str(render_color(c));
         }
 
-        #[cfg(feature = "http")]
-        if args.http {
-            frame_data.push_str("\r\n");
-        }
-        #[cfg(not(feature = "http"))]
-        {
-            frame_data.push('\n');
-        }
+        frame_data.push_str(newline);
     }
 
     // 显示计数器
@@ -91,23 +85,30 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     ];
     stream.write_all(&handshake).await?;
 
-    // 读取客户端响应
+    // 读取客户端响应（带累积缓冲区处理跨read的Telnet协商）
     let mut buf = [0; 1024];
     let mut client_width = 80;
     let mut client_height = 24;
+    let mut accum = Vec::new();
 
     loop {
-        match stream.read(&mut buf).await {
-            Ok(0) => break, // 连接关闭
-            Ok(n) => {
-                // 简单处理Telnet命令（实际需要更完整的解析）
-                if parse_telnet_commands(&buf[..n], &mut client_width, &mut client_height) {
-                    // 命令处理完成，开始发送动画
+        match tokio::time::timeout(Duration::from_secs(30), stream.read(&mut buf)).await {
+            Ok(Ok(0)) => break, // 连接关闭
+            Ok(Ok(n)) => {
+                accum.extend_from_slice(&buf[..n]);
+                let (consumed, found) = parse_telnet_commands(&accum, &mut client_width, &mut client_height);
+                accum.drain(..consumed);
+                if found {
+                    // 成功获取窗口大小，开始发送动画
                     break;
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 eprintln!("Read error: {}", e);
+                break;
+            }
+            Err(_) => {
+                eprintln!("Telnet handshake timeout");
                 break;
             }
         }
@@ -118,7 +119,7 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
     let start_time = Instant::now();
 
     loop {
-        let frame_data = build_frame(client_width, client_height, args, frame_idx, start_time);
+        let frame_data = build_frame(client_width, client_height, args, frame_idx, start_time, "\n");
 
         // 发送帧数据
         stream.write_all(frame_data.as_bytes()).await?;
@@ -128,10 +129,10 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
         sleep(Duration::from_millis(100)).await;
 
         // 检查帧限制
-        if let Some(limit) = args.frames {
-            if frame_idx >= limit {
-                break;
-            }
+        if let Some(limit) = args.frames
+            && frame_idx >= limit
+        {
+            break;
         }
 
         // 下一帧
@@ -143,10 +144,11 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
 
 /// 解析Telnet客户端发送的协议命令
 /// 提取窗口大小信息并更新到width和height
-/// 成功获取窗口大小后返回true
-fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool {
+/// 返回 (已消费的字节数, 是否成功获取窗口大小)
+fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> (usize, bool) {
     let mut i = 0;
     let data_len = data.len();
+    let mut found = false;
 
     while i < data_len {
         // 查找Telnet命令标记(IAC)
@@ -156,58 +158,41 @@ fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool
                 SB => {
                     // 确保有足够的字节进行解析
                     if i + 2 >= data_len {
-                        break;
+                        return (i, found); // 数据不完整，保留从 i 开始的数据
                     }
 
                     let option = data[i + 2];
-                    i += 3; // 跳过IAC, SB, option
+                    // 在剩余数据中查找 IAC SE 结束标记
+                    let mut j = i + 3;
+                    while j + 1 < data_len {
+                        if data[j] == IAC && data[j + 1] == SE {
+                            break;
+                        }
+                        j += 1;
+                    }
+                    if j + 1 >= data_len {
+                        // 未找到完整的子协商结束标记，数据不完整
+                        return (i, found);
+                    }
 
                     // 处理窗口大小子协商
-                    if option == NAWS {
-                        // NAWS需要4字节数据(宽度高8位、宽度低8位、高度高8位、高度低8位)
-                        if i + 4 <= data_len {
-                            *width = ((data[i] as u16) << 8) | data[i + 1] as u16;
-                            *height = ((data[i + 2] as u16) << 8) | data[i + 3] as u16;
-
-                            // 跳过数据并寻找子协商结束标记
-                            i += 4;
-                            while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
-                                i += 1;
-                            }
-
-                            // 跳过SE标记
-                            // if i + 1 < data_len {
-                            //     i += 2;
-                            // }
-
-                            return true; // 成功获取窗口大小
-                        }
+                    if option == NAWS && j - (i + 3) >= 4 {
+                        *width = ((data[i + 3] as u16) << 8) | data[i + 4] as u16;
+                        *height = ((data[i + 5] as u16) << 8) | data[i + 6] as u16;
+                        found = true;
                     }
-                    // 处理终端类型子协商（仅跳过，不处理具体类型）
-                    else if option == TTYPE {
-                        // 跳过终端类型数据直到子协商结束
-                        while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
-                            i += 1;
-                        }
-                        // 跳过SE标记
-                        if i + 1 < data_len {
-                            i += 2;
-                        }
-                    }
-                    // 其他子协商类型：直接跳到结束
-                    else {
-                        while i + 1 < data_len && !(data[i] == IAC && data[i + 1] == SE) {
-                            i += 1;
-                        }
-                        if i + 1 < data_len {
-                            i += 2;
-                        }
-                    }
+
+                    // 跳过整个子协商块
+                    i = j + 2;
                 }
 
                 // 其他Telnet命令：跳过3字节(IAC + cmd + opt)
                 _ => {
-                    i += 3;
+                    if i + 2 < data_len {
+                        i += 3;
+                    } else {
+                        return (i, found); // 数据不完整
+                    }
                 }
             }
         }
@@ -217,7 +202,7 @@ fn parse_telnet_commands(data: &[u8], width: &mut u16, height: &mut u16) -> bool
         }
     }
 
-    false
+    (i, found)
 }
 
 // 运行Telnet服务器

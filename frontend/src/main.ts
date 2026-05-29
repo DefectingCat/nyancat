@@ -1,17 +1,14 @@
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
-import { ProgressAddon, type IProgressState } from "@xterm/addon-progress";
 
 const term = new Terminal({
     cursorBlink: true,
     fontSize: 16,
 });
 const fitAddon = new FitAddon();
-const progressAddon = new ProgressAddon();
 
 term.loadAddon(fitAddon);
-term.loadAddon(progressAddon);
 
 const app = document.getElementById("app");
 if (!app) {
@@ -21,9 +18,6 @@ if (!app) {
 term.open(document.getElementById("app")!);
 
 fitAddon.fit();
-progressAddon.onChange((state: IProgressState) => {
-    console.log(state);
-});
 
 const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${
     window.location.host

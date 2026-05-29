@@ -12,6 +12,11 @@ pub struct Args {
     #[arg(short = 'H', long)]
     pub http: bool,
 
+    #[cfg(feature = "http")]
+    /// HTTP 服务器端口
+    #[arg(long = "http-port", default_value_t = 3000)]
+    pub http_port: u16,
+
     /// 不显示计数器
     #[arg(short = 'n', long = "no-counter")]
     pub no_counter: bool,

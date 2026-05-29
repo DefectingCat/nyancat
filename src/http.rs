@@ -83,7 +83,7 @@ struct AppState {
 static FRONTEND_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/dist");
 
 pub async fn run_http(args: Args) -> anyhow::Result<()> {
-    let state = AppState { args };
+    let state = AppState { args: args.clone() };
 
     let service = ServeDir::new(&FRONTEND_DIR);
 
@@ -94,7 +94,8 @@ pub async fn run_http(args: Args) -> anyhow::Result<()> {
 
     let app = logging_route(app);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let addr = format!("0.0.0.0:{}", args.http_port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("listening on {}", listener.local_addr()?);
     axum::serve(
         listener,
@@ -123,7 +124,7 @@ async fn ws(
 
 #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug)]
 #[repr(u8)]
-pub enum StatusCode {
+pub enum FrameCode {
     /// 初始化，请求客户端大小
     Init = 0,
     /// 处理消息，客户端返回大小，服务端发送动画
@@ -134,7 +135,7 @@ pub enum StatusCode {
 /// 消息帧
 #[derive(Serialize, Deserialize)]
 pub struct MessageFrame {
-    code: StatusCode,
+    code: FrameCode,
     #[serde(skip_serializing_if = "Option::is_none")]
     width: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,7 +155,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
     let mut send_task = tokio::spawn(async move {
         // 第一帧
         let msg = MessageFrame {
-            code: StatusCode::Init,
+            code: FrameCode::Init,
             width: None,
             height: None,
             frame: None,
@@ -169,7 +170,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
         // 后续帧
         while let Some(msg) = rx_from_ws.recv().await {
             match msg.code {
-                StatusCode::Ok => {
+                FrameCode::Ok => {
                     // 构建帧内容
                     let width = msg
                         .width
@@ -182,10 +183,10 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                     let mut frame_idx = 0;
                     let start_time = Instant::now();
                     loop {
-                        let frame_data = build_frame(width, height, &args, frame_idx, start_time);
+                        let frame_data = build_frame(width, height, &args, frame_idx, start_time, "\r\n");
 
                         let msg = MessageFrame {
-                            code: StatusCode::Ok,
+                            code: FrameCode::Ok,
                             width: None,
                             height: None,
                             frame: Some(frame_data),
@@ -207,7 +208,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
                         frame_idx = (frame_idx + 1) % FRAMES.len();
                     }
                 }
-                StatusCode::Error => {
+                FrameCode::Error => {
                     bail!("Error received from client");
                 }
                 _ => continue,
