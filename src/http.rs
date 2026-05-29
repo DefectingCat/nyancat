@@ -136,7 +136,7 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
 
     // 发送方向 从 channel 接受消息
     let args = args.clone();
-    let mut send_task = tokio::spawn(async move {
+    let mut send_task: tokio::task::JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
         // 第一帧
         let msg = MessageFrame {
             code: FrameCode::Init,
@@ -151,55 +151,75 @@ async fn handle_socket(socket: WebSocket, who: SocketAddr, args: Args) {
             .await
             .with_context(|| "Could not send message")?;
 
-        // 后续帧
-        while let Some(msg) = rx_from_ws.recv().await {
-            match msg.code {
-                FrameCode::Ok => {
-                    // 构建帧内容
-                    let width = msg
-                        .width
-                        .ok_or_else(|| anyhow::anyhow!("Could not get width from message"))?;
-                    let height = msg
-                        .height
-                        .ok_or_else(|| anyhow::anyhow!("Could not get height from message"))?;
+        // 等待客户端返回初始尺寸
+        let (mut width, mut height) = loop {
+            if let Some(msg) = rx_from_ws.recv().await {
+                match msg.code {
+                    FrameCode::Ok => {
+                        let w = msg
+                            .width
+                            .ok_or_else(|| anyhow::anyhow!("Could not get width from message"))?;
+                        let h = msg
+                            .height
+                            .ok_or_else(|| anyhow::anyhow!("Could not get height from message"))?;
+                        break (w, h);
+                    }
+                    FrameCode::Error => {
+                        bail!("Error received from client");
+                    }
+                    _ => continue,
+                }
+            }
+        };
 
-                    // 发送动画帧
-                    let mut frame_idx = 0;
-                    let start_time = Instant::now();
-                    loop {
-                        let frame_data = build_frame(width, height, &args, frame_idx, start_time, "\r\n");
+        // 发送动画帧，同时监听 resize 消息
+        let mut frame_idx = 0;
+        let start_time = Instant::now();
+        loop {
+            tokio::select! {
+                // 定时发送下一帧
+                _ = sleep(Duration::from_millis(100)) => {
+                    let frame_data = build_frame(width, height, &args, frame_idx, start_time, "\r\n");
 
-                        let msg = MessageFrame {
-                            code: FrameCode::Ok,
-                            width: None,
-                            height: None,
-                            frame: Some(frame_data),
-                        };
+                    let msg = MessageFrame {
+                        code: FrameCode::Ok,
+                        width: None,
+                        height: None,
+                        frame: Some(frame_data),
+                    };
 
-                        let msg_serialized = serde_json::to_string(&msg)
-                            .with_context(|| "Could not serialize message")?;
+                    let msg_serialized = serde_json::to_string(&msg)
+                        .with_context(|| "Could not serialize message")?;
 
-                        // 发送帧数据
-                        sender
-                            .send(Message::Text(msg_serialized.into()))
-                            .await
-                            .with_context(|| "Could not send message")?;
+                    sender
+                        .send(Message::Text(msg_serialized.into()))
+                        .await
+                        .with_context(|| "Could not send message")?;
 
-                        // 控制帧率
-                        sleep(Duration::from_millis(100)).await;
+                    frame_idx = (frame_idx + 1) % FRAMES.len();
+                }
+                // 监听客户端 resize 消息
+                maybe_msg = rx_from_ws.recv() => {
+                    if let Some(msg) = maybe_msg {
+                        match msg.code {
+                            FrameCode::Ok => {
+                                if let Some(w) = msg.width {
+                                    width = w;
+                                }
+                                if let Some(h) = msg.height {
+                                    height = h;
+                                }
 
-                        // 下一帧
-                        frame_idx = (frame_idx + 1) % FRAMES.len();
+                            }
+                            FrameCode::Error => {
+                                bail!("Error received from client");
+                            }
+                            _ => {}
+                        }
                     }
                 }
-                FrameCode::Error => {
-                    bail!("Error received from client");
-                }
-                _ => continue,
             }
         }
-
-        anyhow::Ok(())
     });
 
     // This second task will receive messages from client and print them on server console

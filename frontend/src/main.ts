@@ -28,7 +28,6 @@ ws.onopen = () => {
 };
 ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    console.log(msg);
     switch (msg.code) {
         case 0:
             const data = {
@@ -52,6 +51,19 @@ ws.onclose = () => {
 ws.onerror = (ev) => {
     console.log(ev);
 };
+
+window.addEventListener("resize", () => {
+    fitAddon.fit();
+
+    const data = {
+        code: 1,
+        width: term.cols,
+        height: term.rows,
+    };
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+    }
+});
 
 // term.onKey((ev) => {
 //     term.write(ev.key);
