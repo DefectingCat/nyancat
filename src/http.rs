@@ -1,14 +1,13 @@
-use std::{fmt::Display, net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use anyhow::{Context, bail};
 use axum::{
     Router,
-    body::Bytes,
     extract::{
         ConnectInfo, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, HeaderValue, Request},
+    http::{HeaderValue, Request},
     response::Response,
     routing::any,
 };
@@ -27,47 +26,32 @@ use tracing::{Span, error, info, info_span};
 
 use crate::{animation::FRAMES, cli::Args, telnet::build_frame};
 
-/// Format request latency and status message
-/// return a string
-fn format_latency(latency: Duration, status: impl Display) -> String {
-    let micros = latency.as_micros();
-    let millis = latency.as_millis();
-    if micros >= 1000 {
-        format!("{status} {millis}ms")
-    } else {
-        format!("{status} {micros}μs")
-    }
-}
-
-/// Middleware for logging each request.
+/// Middleware for logging each HTTP request.
 ///
-/// This middleware will calculate each request latency
-/// and add request's information to each info_span.
+/// Uses `TraceLayer::new_for_http` with custom callbacks so that every
+/// request/response is logged at INFO level (the default `DefaultOnResponse`
+/// logs at DEBUG which is filtered out by the default INFO-level filter).
+/// Latency is automatically formatted by tracing's `?`/`%` display.
 pub fn logging_route(router: Router) -> Router {
-    let make_span = |req: &Request<_>| {
-        let unknown = &HeaderValue::from_static("Unknown");
-        let empty = &HeaderValue::from_static("");
-        let headers = req.headers();
-        let ua = headers
-            .get("User-Agent")
-            .unwrap_or(unknown)
-            .to_str()
-            .unwrap_or("Unknown");
-        let host = headers.get("Host").unwrap_or(empty).to_str().unwrap_or("");
-        info_span!("HTTP", method = ?req.method(), host, uri = ?req.uri(), ua)
-    };
-
     let trace_layer = TraceLayer::new_for_http()
-        .make_span_with(make_span)
-        .on_request(|_req: &Request<_>, _span: &Span| {})
-        .on_response(|res: &Response, latency: Duration, _span: &Span| {
-            info!("{}", format_latency(latency, res.status()));
+        .make_span_with(|req: &Request<_>| {
+            let unknown = &HeaderValue::from_static("Unknown");
+            let empty = &HeaderValue::from_static("");
+            let headers = req.headers();
+            let ua = headers
+                .get("User-Agent")
+                .unwrap_or(unknown)
+                .to_str()
+                .unwrap_or("Unknown");
+            let host = headers.get("Host").unwrap_or(empty).to_str().unwrap_or("");
+            info_span!("HTTP", method = ?req.method(), host, uri = ?req.uri(), ua)
         })
-        .on_body_chunk(|_chunk: &Bytes, _latency: Duration, _span: &Span| {})
-        .on_eos(|_trailers: Option<&HeaderMap>, _stream_duration: Duration, _span: &Span| {})
+        .on_response(|res: &Response, latency: std::time::Duration, _span: &Span| {
+            info!(status = res.status().as_u16(), ?latency, "finished processing request");
+        })
         .on_failure(
-            |error: ServerErrorsFailureClass, latency: Duration, _span: &Span| {
-                error!("{}", format_latency(latency, error));
+            |error: ServerErrorsFailureClass, latency: std::time::Duration, _span: &Span| {
+                error!(%error, ?latency, "request failed");
             },
         );
 
