@@ -2,7 +2,7 @@ all: build
 
 http:
 	cd frontend && pnpm i && pnpm run build \
-        && cargo build --features http --release
+        && cargo build --release
 
 build:
 	cargo build --release
@@ -12,7 +12,7 @@ musl:
 
 http-musl:
 	cd frontend && pnpm i && pnpm run build \
-        && cargo build --features http --release --target=x86_64-unknown-linux-musl
+        && cargo build --release --target=x86_64-unknown-linux-musl
 
 clean:
 	cargo clean
