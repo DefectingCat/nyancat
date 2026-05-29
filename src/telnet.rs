@@ -127,9 +127,18 @@ pub async fn handle_telnet_client(mut stream: TcpStream, args: &Args) -> io::Res
         // 控制帧率
         sleep(Duration::from_millis(100)).await;
 
+        // 检查帧限制
+        if let Some(limit) = args.frames {
+            if frame_idx >= limit {
+                break;
+            }
+        }
+
         // 下一帧
         frame_idx = (frame_idx + 1) % FRAMES.len();
     }
+
+    Ok(())
 }
 
 /// 解析Telnet客户端发送的协议命令

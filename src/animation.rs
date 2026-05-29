@@ -830,7 +830,7 @@ pub fn render_color(character: char) -> &'static str {
         ';' => "\x1B[48;5;19m  \x1B[0m",
         '*' => "\x1B[48;5;240m  \x1B[0m",
         '%' => "\x1B[48;5;175m  \x1B[0m",
-        _ => todo!(),
+        _ => "\x1B[48;5;17m  \x1B[0m", // 默认深蓝背景，安全降级
     }
 }
 
@@ -919,5 +919,71 @@ impl NyanedTime {
             nyaned,
             counter_text,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_color_known_chars() {
+        assert!(render_color(',').contains("48;5;17"));
+        assert!(render_color('.').contains("48;5;231"));
+        assert!(render_color('\'').contains("48;5;16"));
+        assert!(render_color('@').contains("48;5;230"));
+        assert!(render_color('$').contains("48;5;175"));
+        assert!(render_color('-').contains("48;5;162"));
+        assert!(render_color('>').contains("48;5;196"));
+        assert!(render_color('&').contains("48;5;214"));
+        assert!(render_color('+').contains("48;5;226"));
+        assert!(render_color('#').contains("48;5;118"));
+        assert!(render_color('=').contains("48;5;33"));
+        assert!(render_color(';').contains("48;5;19"));
+        assert!(render_color('*').contains("48;5;240"));
+        assert!(render_color('%').contains("48;5;175"));
+    }
+
+    #[test]
+    fn test_render_color_unknown_fallback() {
+        let result = render_color('?');
+        assert!(result.contains("48;5;17")); // 默认深蓝背景
+        let result = render_color(' ');
+        assert!(result.contains("48;5;17"));
+        let result = render_color('\n');
+        assert!(result.contains("48;5;17"));
+    }
+
+    #[test]
+    fn test_render_size_large_terminal() {
+        let size = RenderSize::new(200, 100);
+        // Terminal larger than frame: min_col is 0, max_col exceeds frame width
+        // but actual rendering is bounded by frame data length
+        assert_eq!(size.min_col, 0);
+        assert_eq!(size.max_col, 100); // term_half_width = 200/2 = 100
+        assert_eq!(size.min_row, 0);
+        assert_eq!(size.max_row, 99);
+    }
+
+    #[test]
+    fn test_render_size_small_terminal() {
+        let size = RenderSize::new(10, 10);
+        // Terminal smaller than frame: centered crop
+        // term_half_width = 5, min_col = (64-5)/2 = 29
+        assert_eq!(size.min_col, 29);
+        assert_eq!(size.max_col, 34);
+        assert_eq!(size.min_row, 27); // (64-10)/2 = 27
+        assert_eq!(size.max_row, 36); // 27 + 9 = 36
+    }
+
+    #[test]
+    fn test_render_size_exact_match() {
+        let size = RenderSize::new(128, 64);
+        // When terminal is exactly 2x frame width (128 = 64*2)
+        // term_half_width = 64, min_col = (64-64)/2 = 0
+        assert_eq!(size.min_col, 0);
+        assert_eq!(size.max_col, 64);
+        assert_eq!(size.min_row, 0);
+        assert_eq!(size.max_row, 63); // 0 + (64-1) = 63
     }
 }

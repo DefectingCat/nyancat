@@ -16,23 +16,41 @@ use crate::{
     cli::Args,
 };
 
+/// RAII guard for terminal state restoration.
+/// Ensures raw mode is disabled and cursor is shown on drop.
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn new() -> io::Result<Self> {
+        enable_raw_mode()?;
+        execute!(io::stdout(), LeaveAlternateScreen, cursor::Hide)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+    }
+}
+
 // 独立模式运行
 pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
+    let _guard = TerminalGuard::new()?;
     let mut stdout = io::stdout();
 
-    // 终端初始化
-    enable_raw_mode()?;
-    execute!(stdout, LeaveAlternateScreen, cursor::Hide)?;
-
-    // 监听退出信号
-    let event_loop = tokio::spawn(async {
+    // 监听退出信号 (spawn_blocking because crossterm events are synchronous)
+    let event_loop = tokio::task::spawn_blocking(move || {
         loop {
-            if event::poll(Duration::from_millis(100))?
-                && let Event::Key(event) = event::read()?
-                && event.kind == KeyEventKind::Press
-                && (event.code == KeyCode::Esc || event.code == KeyCode::Char('q'))
-            {
-                return anyhow::Ok(());
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(Event::Key(event)) = event::read() {
+                    if event.kind == KeyEventKind::Press
+                        && (event.code == KeyCode::Esc || event.code == KeyCode::Char('q'))
+                    {
+                        break;
+                    }
+                }
             }
         }
     });
@@ -94,10 +112,6 @@ pub async fn run_standalone(args: &Args) -> anyhow::Result<()> {
         // 下一帧
         frame_idx = (frame_idx + 1) % FRAMES.len();
     }
-
-    // 恢复终端
-    disable_raw_mode()?;
-    execute!(stdout, LeaveAlternateScreen, cursor::Show)?;
 
     Ok(())
 }

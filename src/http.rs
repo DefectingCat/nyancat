@@ -284,7 +284,7 @@ async fn process_message(
             } else {
                 info!(">>> {who} somehow sent close message without CloseFrame");
             }
-            bail!("Could not deserialize message");
+            return Ok(());
         }
 
         Message::Pong(v) => {

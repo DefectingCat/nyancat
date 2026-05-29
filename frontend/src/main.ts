@@ -45,7 +45,7 @@ ws.onmessage = (ev) => {
             ws.send(JSON.stringify(data));
             break;
         case 1:
-            term.writeln(msg.frame);
+            term.write(msg.frame);
             break;
         case 2:
             term.writeln("Error");
